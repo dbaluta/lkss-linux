@@ -1,0 +1,5 @@
+menu "Linux Kernel Summer School Drivers"
+
+source "drivers/lkss/labs/lab1/Kconfig"
+
+endmenu
