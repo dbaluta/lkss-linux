@@ -54,73 +54,28 @@
 	};
 
 	/*
-	 * Three GPIO LEDs on EXT2 header (J601).
-	 * Anode → GPIO pad (active-high), cathode → GND via 220 Ω resistor.
-	 * Pin 7  (GPIO_IO04) – LED0 green
-	 * Pin 26 (GPIO_IO05) – LED1 yellow
-	 * Pin 12 (GPIO_IO06) – LED2 red
+	 * LKSS lab4 platform_gpio driver node.
+	 * LED0 (red):   GPIO2_IO07 / EXT2 pin 26  (active-high, 220 Ω resistor)
+	 * LED1 (green): GPIO2_IO04 / EXT2 pin  7  (active-high, 220 Ω resistor)
+	 * LED2 (blue):  GPIO2_IO18 / EXT2 pin 12  (active-high, 220 Ω resistor)
+	 * BTN0:         GPIO2_IO05 / EXT2 pin 29  (active-low, 10 kΩ pull-up)
+	 * BTN1:         GPIO2_IO06 / EXT2 pin 31  (active-low, 10 kΩ pull-up)
+	 * BTN2:         GPIO2_IO00 / EXT2 pin 27  (active-low, 10 kΩ pull-up)
+	 * BTN3:         GPIO2_IO01 / EXT2 pin 28  (active-low, 10 kΩ pull-up)
 	 */
-	leds {
+	lkss-gpio {
 		compatible = "lkss,gpio-demo";
 		pinctrl-names = "default";
-		pinctrl-0 = <&pinctrl_leds>;
+		pinctrl-0 = <&pinctrl_leds &pinctrl_buttons>;
 
-		led-green {
-			label = "led0:green";
-			led-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>;
-			default-state = "off";
-		};
+		led-gpios = <&gpio2 7 GPIO_ACTIVE_HIGH>,
+			    <&gpio2 4 GPIO_ACTIVE_HIGH>,
+			    <&gpio2 18 GPIO_ACTIVE_HIGH>;
 
-		led-blue {
-			label = "led1:yellow";
-			led-gpios = <&gpio2 18 GPIO_ACTIVE_HIGH>;
-			default-state = "off";
-		};
-
-		led-red {
-			label = "led2:red";
-			led-gpios = <&gpio2 7 GPIO_ACTIVE_HIGH>;
-			default-state = "off";
-		};
-	};
-
-	/*
-	 * Four GPIO buttons on EXT2 header (J601).
-	 * Active-low: pressing pulls line to GND. External 10 kΩ pull-ups to 3V3
-	 * required (SoC internal pull-ups are not enabled by the pad config).
-	 * Pin 22 (GPIO_IO13) – BTN0
-	 * Pin 29 (GPIO_IO14) – BTN1
-	 * Pin 31 (GPIO_IO15) – BTN2
-	 * Pin 27 (GPIO_IO16) – BTN3
-	 */
-	gpio-keys-ext2 {
-		compatible = "gpio-keys";
-		pinctrl-names = "default";
-		pinctrl-0 = <&pinctrl_buttons>;
-
-		button-ext0 {
-			label = "EXT Button 0";
-			linux,code = <BTN_3>;
-			gpios = <&gpio2 13 GPIO_ACTIVE_LOW>;
-		};
-
-		button-ext1 {
-			label = "EXT Button 1";
-			linux,code = <BTN_4>;
-			gpios = <&gpio2 14 GPIO_ACTIVE_LOW>;
-		};
-
-		button-ext2 {
-			label = "EXT Button 2";
-			linux,code = <BTN_5>;
-			gpios = <&gpio2 15 GPIO_ACTIVE_LOW>;
-		};
-
-		button-ext3 {
-			label = "EXT Button 3";
-			linux,code = <BTN_6>;
-			gpios = <&gpio2 16 GPIO_ACTIVE_LOW>;
-		};
+		button-gpios = <&gpio2 5 GPIO_ACTIVE_LOW>,
+			       <&gpio2 6 GPIO_ACTIVE_LOW>,
+			       <&gpio2 0 GPIO_ACTIVE_LOW>,
+			       <&gpio2 1 GPIO_ACTIVE_LOW>;
 	};
 
 	reg_usdhc2_vmmc: regulator-usdhc2 {
@@ -702,10 +657,10 @@
 
 	pinctrl_buttons: buttonsgrp {
 		fsl,pins = <
-			MX93_PAD_GPIO_IO13__GPIO2_IO13			0x31e
-			MX93_PAD_GPIO_IO14__GPIO2_IO14			0x31e
-			MX93_PAD_GPIO_IO15__GPIO2_IO15			0x31e
-			MX93_PAD_GPIO_IO16__GPIO2_IO16			0x31e
+			MX93_PAD_GPIO_IO05__GPIO2_IO05			0x31e
+			MX93_PAD_GPIO_IO06__GPIO2_IO06			0x31e
+			MX93_PAD_GPIO_IO00__GPIO2_IO00			0x31e
+			MX93_PAD_GPIO_IO01__GPIO2_IO01			0x31e
 		>;
 	};
 
