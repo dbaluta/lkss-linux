@@ -26,7 +26,21 @@
 		stdout-path = &lpuart1;
 	};
 
-	flexcan2_phy: can-phy {
+        lkss-bus {
+		compatible = "simple-bus";
+
+                button-led {
+			compatible = "lkss,lab2";
+                        button-gpios = <&gpio2 22 GPIO_ACTIVE_HIGH>,    // SW4: GPIO2.IO[22]
+                                       <&gpio2 18 GPIO_ACTIVE_HIGH>;    // SW2: GPIO2.IO[18]
+			led-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>,        // Red led: GPIO_IO[4]
+                                    <&gpio2 14 GPIO_ACTIVE_HIGH>,       // Green led: GPIO_IO[14]
+                                    <&gpio2 15 GPIO_ACTIVE_HIGH>;       // Blue led:GPIO_IO[15]
+                        status = "disabled";
+		};
+        };
+
+        flexcan2_phy: can-phy {
 		compatible = "nxp,tja1051";
 		#phy-cells = <0>;
 		max-bitrate = <5000000>;
