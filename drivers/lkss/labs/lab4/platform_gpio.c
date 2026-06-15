@@ -1,36 +1,29 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * lkss_gpio.c – LKSS lab platform driver: 3 LEDs + 4 buttons via GPIO
+ * platform_gpio.c – LKSS Lab 4: LED blinking + button interrupt handlers
  *
- * This module binds to the "lkss,gpio-demo" compatible node defined in
- * imx93-11x11-frdm-lkss.dts.  It demonstrates the core kernel APIs that
- * every GPIO-based driver uses:
- *
- *   • Platform driver registration  (platform_driver / module_platform_driver)
+ * Demonstrates:
+ *   • Platform driver registration  (module_platform_driver)
  *   • Device Tree binding           (of_match_table / devm_gpiod_get_index)
  *   • GPIO descriptor API           (gpiod_direction_*, gpiod_set/get_value)
- *   • Edge-triggered interrupts     (gpiod_to_irq / devm_request_irq)
- *   • Managed device resources      (devm_* – automatic cleanup on unbind)
- *   • Sysfs attributes              (DEVICE_ATTR_RW/RO / dev_groups)
+ *   • Kernel timers                 (timer_setup, mod_timer, timer_delete_sync)
+ *   • Edge-triggered IRQs           (gpiod_to_irq, devm_request_threaded_irq)
+ *   • Sysfs attributes              (DEVICE_ATTR_RW/RO, ATTRIBUTE_GROUPS)
+ *   • Managed resources             (devm_* – automatic cleanup on unbind)
  *
- * Sysfs interface (under /sys/bus/platform/devices/lkss-gpio/):
+ * Sysfs (under /sys/bus/platform/devices/lkss-lab4/):
  *
  *   led0, led1, led2
- *       Read  → current output level (0 or 1)
- *       Write → "0" turns LED off, "1" turns LED on
+ *       Write "1" → start blinking (toggles every BLINK_MS milliseconds)
+ *       Write "0" → stop blinking and turn LED off
+ *       Read       → "1" if blinking, "0" if off
  *
  *   button0, button1, button2, button3
- *       Read  → logical value: 1 = button pressed, 0 = released
- *       (The gpiod layer inverts the physical active-low line automatically.)
+ *       Read  → "1" if pressed, "0" if released
  *
- * Every button press/release also emits a dev_info() message visible with:
- *       dmesg -w
+ * Button edges also print to the kernel log — observe with:  dmesg -w
  *
- * Cross-compile:
- *   make -C /path/to/linux M=$(pwd) ARCH=arm64 \
- *        CROSS_COMPILE=aarch64-linux-gnu- modules
- *
- * Hardware:
+ * Hardware: FRDM-IMX93 EXT2 header (J601)
  *   LED0 (red):   GPIO2_IO07 / EXT2 pin 26  (active-high, 220 Ω resistor)
  *   LED1 (green): GPIO2_IO04 / EXT2 pin  7  (active-high, 220 Ω resistor)
  *   LED2 (blue):  GPIO2_IO18 / EXT2 pin 12  (active-high, 220 Ω resistor)
@@ -42,92 +35,110 @@
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
-#include <linux/gpio/consumer.h>   /* gpiod API */
-#include <linux/interrupt.h>       /* request_irq, IRQF_* */
-#include <linux/of.h>              /* of_match_table */
+#include <linux/gpio/consumer.h>
+#include <linux/interrupt.h>
+#include <linux/timer.h>
+#include <linux/of.h>
 #include <linux/slab.h>
 
 /* ── Constants ───────────────────────────────────────────────────────────── */
 
 #define NUM_LEDS    3
 #define NUM_BUTTONS 4
+#define BLINK_MS    500   /* LED toggle interval in milliseconds */
+
+/* ── Per-LED blink state ─────────────────────────────────────────────────── */
+
+/*
+ * Each LED owns a timer_list.  The timer fires in softirq context and
+ * toggles the GPIO, then re-arms itself.  Only non-sleeping GPIO ops are
+ * safe here; memory-mapped GPIO on i.MX93 never sleeps so gpiod_get_value /
+ * gpiod_set_value are fine without the _cansleep variants.
+ */
+struct led_blink {
+	struct gpio_desc  *gpiod;
+	struct timer_list  timer;
+	bool               blinking;
+};
+
+/* ── Per-button IRQ context ──────────────────────────────────────────────── */
+
+struct btn_ctx {
+	struct device    *dev;
+	struct gpio_desc *gpiod;
+	int               index;  /* 1-based to match BTN1..BTN4 labels */
+};
 
 /* ── Driver private data ─────────────────────────────────────────────────── */
 
-/*
- * Per-button context passed as the 'data' argument to the IRQ handler.
- * We allocate one of these per button so the handler knows which GPIO fired.
- */
-struct btn_ctx {
-	struct device    *dev;   /* for dev_info() / dev_err() in IRQ context */
-	struct gpio_desc *gpiod; /* to read the line level after the edge      */
-	int               index; /* 0–3, matches the DT button-gpios order     */
-};
-
-/*
- * Main per-device state structure, allocated by probe() and stored via
- * platform_set_drvdata() so sysfs callbacks can retrieve it with
- * dev_get_drvdata().
- */
-struct lkss_gpio {
-	struct gpio_desc *led[NUM_LEDS];
+struct lab4_gpio {
+	struct led_blink  led[NUM_LEDS];
 	struct gpio_desc *btn[NUM_BUTTONS];
-	struct btn_ctx    btn_ctx[NUM_BUTTONS]; /* one ctx per button IRQ */
+	struct btn_ctx    btn_ctx[NUM_BUTTONS];
 };
 
-/* ── Interrupt handler ───────────────────────────────────────────────────── */
+/* ── Timer callback ──────────────────────────────────────────────────────── */
+
+static void led_blink_fn(struct timer_list *t)
+{
+	struct led_blink *lb = timer_container_of(lb, t, timer);
+
+	gpiod_set_value(lb->gpiod, !gpiod_get_value(lb->gpiod));
+	mod_timer(&lb->timer, jiffies + msecs_to_jiffies(BLINK_MS));
+}
+
+/* ── Button IRQ handler ──────────────────────────────────────────────────── */
 
 /*
- * Called on both rising and falling edges of each button GPIO.
- * Reading the GPIO value after the edge tells us whether the button is
- * currently pressed (logical 1 because GPIOD inverts active-low) or released.
- *
- * NOTE: gpiod_get_value_cansleep() is safe here because IRQF_TRIGGER_BOTH
- * is handled in a threaded context when the underlying GPIO controller
- * needs a sleeping I²C/SPI read.  If the GPIO controller is memory-mapped
- * (which it is on i.MX93), the non-sleeping variant works too; we use the
- * _cansleep variant defensively.
+ * Threaded IRQ — runs in a kernel thread, safe to call _cansleep variants.
+ * gpiod handles active-low inversion: logical 1 == button pressed.
  */
-static irqreturn_t lkss_btn_irq(int irq, void *data)
+static irqreturn_t btn_irq_handler(int irq, void *data)
 {
 	struct btn_ctx *ctx = data;
 	int val = gpiod_get_value_cansleep(ctx->gpiod);
 
-	/*
-	 * val == 1  →  button pressed  (gpiod has inverted the active-low line)
-	 * val == 0  →  button released
-	 */
-	dev_info(ctx->dev, "button%d %s\n",
-	         ctx->index, val ? "pressed" : "released");
+	dev_info(ctx->dev, "BTN%d %s\n",
+		 ctx->index, val ? "pressed" : "released");
 
 	return IRQ_HANDLED;
 }
 
-/* ── Sysfs attributes ────────────────────────────────────────────────────── */
+/* ── Sysfs: led{0,1,2} ───────────────────────────────────────────────────── */
 
 /*
- * DEFINE_LED_ATTR(N) expands to the show/store functions and the
- * DEVICE_ATTR_RW declaration for led<N>.
+ * DEFINE_LED_ATTR(N) generates show/store callbacks and DEVICE_ATTR_RW for
+ * the sysfs file "led<N>".
  *
- * show  → returns the current logical output level ("0\n" or "1\n")
- * store → accepts "0" or "1" and drives the GPIO accordingly
+ *   show  → "1\n" if blinking, "0\n" if off
+ *   store → "1" arms the timer; "0" disarms and drives GPIO low
  */
 #define DEFINE_LED_ATTR(N)						\
 static ssize_t led##N##_show(struct device *dev,			\
 			     struct device_attribute *attr, char *buf)	\
 {									\
-	struct lkss_gpio *p = dev_get_drvdata(dev);			\
-	return sysfs_emit(buf, "%d\n", gpiod_get_value(p->led[N]));	\
+	struct lab4_gpio *p = dev_get_drvdata(dev);			\
+	return sysfs_emit(buf, "%d\n", p->led[N].blinking ? 1 : 0);	\
 }									\
 static ssize_t led##N##_store(struct device *dev,			\
 			      struct device_attribute *attr,		\
 			      const char *buf, size_t count)		\
 {									\
-	struct lkss_gpio *p = dev_get_drvdata(dev);			\
+	struct lab4_gpio *p = dev_get_drvdata(dev);			\
 	int val;							\
 	if (kstrtoint(buf, 0, &val))					\
 		return -EINVAL;						\
-	gpiod_set_value(p->led[N], !!val);				\
+	if (val) {							\
+		if (!p->led[N].blinking) {				\
+			p->led[N].blinking = true;			\
+			mod_timer(&p->led[N].timer,			\
+				  jiffies + msecs_to_jiffies(BLINK_MS)); \
+		}							\
+	} else {							\
+		p->led[N].blinking = false;				\
+		timer_delete_sync(&p->led[N].timer);			\
+		gpiod_set_value(p->led[N].gpiod, 0);			\
+	}								\
 	return count;							\
 }									\
 static DEVICE_ATTR_RW(led##N)
@@ -135,6 +146,8 @@ static DEVICE_ATTR_RW(led##N)
 DEFINE_LED_ATTR(0);
 DEFINE_LED_ATTR(1);
 DEFINE_LED_ATTR(2);
+
+/* ── Sysfs: button{0,1,2,3} ─────────────────────────────────────────────── */
 
 /*
  * DEFINE_BTN_ATTR(N) creates a read-only sysfs file for button<N>.
@@ -146,8 +159,9 @@ static ssize_t button##N##_show(struct device *dev,			\
 				struct device_attribute *attr,		\
 				char *buf)				\
 {									\
-	struct lkss_gpio *p = dev_get_drvdata(dev);			\
-	return sysfs_emit(buf, "%d\n", gpiod_get_value(p->btn[N]));	\
+	struct lab4_gpio *p = dev_get_drvdata(dev);			\
+	return sysfs_emit(buf, "%d\n",					\
+			  gpiod_get_value(p->btn[N]));			\
 }									\
 static DEVICE_ATTR_RO(button##N)
 
@@ -156,12 +170,7 @@ DEFINE_BTN_ATTR(1);
 DEFINE_BTN_ATTR(2);
 DEFINE_BTN_ATTR(3);
 
-/*
- * Collect all attributes into a group.  The ATTRIBUTE_GROUPS() macro builds
- * lkss_gpio_groups[], which is assigned to driver.dev_groups below so the
- * kernel creates/removes the sysfs files automatically on probe/remove.
- */
-static struct attribute *lkss_gpio_attrs[] = {
+static struct attribute *lab4_gpio_attrs[] = {
 	&dev_attr_led0.attr,
 	&dev_attr_led1.attr,
 	&dev_attr_led2.attr,
@@ -171,136 +180,107 @@ static struct attribute *lkss_gpio_attrs[] = {
 	&dev_attr_button3.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(lkss_gpio);
+ATTRIBUTE_GROUPS(lab4_gpio);
 
 /* ── Probe ───────────────────────────────────────────────────────────────── */
 
-/*
- * probe() is called once when the platform bus matches the DT node's
- * compatible string against our of_match_table.
- *
- * All allocations and registrations use the devm_ (device-managed) variants.
- * When the driver is unbound (or the module is removed), the kernel releases
- * every devm_ resource automatically in reverse order — no remove() needed.
- */
-static int lkss_gpio_probe(struct platform_device *pdev)
+static int lab4_gpio_probe(struct platform_device *pdev)
 {
 	struct device    *dev = &pdev->dev;
-	struct lkss_gpio *priv;
+	struct lab4_gpio *priv;
 	int i, irq, ret;
 
-	/* Allocate zeroed private data, lifetime tied to device */
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
 	platform_set_drvdata(pdev, priv);
 
-	/* ── LEDs: request as outputs, initially off ── */
+	/* LEDs: outputs, initially off */
 	for (i = 0; i < NUM_LEDS; i++) {
-		/*
-		 * "led" matches the "led-gpios" DT property (the suffix "-gpios"
-		 * is the convention; the driver just uses the base name "led").
-		 * GPIOD_OUT_LOW initialises the output to the inactive state
-		 * (logical 0 → physical low for ACTIVE_HIGH).
-		 */
-		priv->led[i] = devm_gpiod_get_index(dev, "led", i,
-						     GPIOD_OUT_LOW);
-		if (IS_ERR(priv->led[i])) {
-			dev_err(dev, "failed to request LED %d: %ld\n",
-				i, PTR_ERR(priv->led[i]));
-			return PTR_ERR(priv->led[i]);
-		}
-		gpiod_set_consumer_name(priv->led[i], "lkss-led");
+		priv->led[i].gpiod = devm_gpiod_get_index(dev, "led", i,
+							   GPIOD_OUT_LOW);
+		if (IS_ERR(priv->led[i].gpiod))
+			return dev_err_probe(dev, PTR_ERR(priv->led[i].gpiod),
+					     "failed to get LED %d\n", i);
+
+		gpiod_set_consumer_name(priv->led[i].gpiod, "lkss-led");
+		timer_setup(&priv->led[i].timer, led_blink_fn, 0);
 	}
 
-	/* ── Buttons: request as inputs, set up edge IRQs ── */
+	/* Buttons: inputs, edge-triggered threaded IRQs */
 	for (i = 0; i < NUM_BUTTONS; i++) {
 		priv->btn[i] = devm_gpiod_get_index(dev, "button", i,
 						     GPIOD_IN);
-		if (IS_ERR(priv->btn[i])) {
-			dev_err(dev, "failed to request button %d: %ld\n",
-				i, PTR_ERR(priv->btn[i]));
-			return PTR_ERR(priv->btn[i]);
-		}
+		if (IS_ERR(priv->btn[i]))
+			return dev_err_probe(dev, PTR_ERR(priv->btn[i]),
+					     "failed to get button %d\n", i);
+
 		gpiod_set_consumer_name(priv->btn[i], "lkss-button");
 
-		/* Populate per-button context for the IRQ handler */
 		priv->btn_ctx[i].dev   = dev;
 		priv->btn_ctx[i].gpiod = priv->btn[i];
-		priv->btn_ctx[i].index = i;
+		priv->btn_ctx[i].index = i + 1;  /* 1-based: BTN1..BTN4 */
 
-		/*
-		 * gpiod_to_irq() translates the GPIO descriptor to a Linux
-		 * IRQ number managed by the GPIO controller's irqchip.
-		 */
 		irq = gpiod_to_irq(priv->btn[i]);
-		if (irq < 0) {
-			dev_err(dev, "no IRQ for button %d\n", i);
-			return irq;
-		}
+		if (irq < 0)
+			return dev_err_probe(dev, irq,
+					     "no IRQ for button %d\n", i);
 
-		/*
-		 * Request both edges so we detect press and release.
-		 * devm_request_threaded_irq() spawns a kernel thread for the
-		 * handler, which is required if gpiod_get_value_cansleep()
-		 * is used inside it (not strictly needed for MMIO GPIO but
-		 * safer and more portable).
-		 */
 		ret = devm_request_threaded_irq(dev, irq,
-						NULL,           /* hard IRQ: none */
-						lkss_btn_irq,   /* thread fn     */
+						NULL,
+						btn_irq_handler,
 						IRQF_TRIGGER_RISING  |
 						IRQF_TRIGGER_FALLING |
 						IRQF_ONESHOT,
 						"lkss-button",
 						&priv->btn_ctx[i]);
-		if (ret) {
-			dev_err(dev, "failed to request IRQ %d for button %d: %d\n",
-				irq, i, ret);
-			return ret;
-		}
+		if (ret)
+			return dev_err_probe(dev, ret,
+					     "failed to request IRQ for button %d\n", i);
 	}
 
-	dev_info(dev, "probed: %d LEDs, %d buttons\n", NUM_LEDS, NUM_BUTTONS);
-	dev_info(dev, "LEDs:    /sys/bus/platform/devices/lkss-gpio/led{0,1,2}\n");
-	dev_info(dev, "Buttons: /sys/bus/platform/devices/lkss-gpio/button{0,1,2,3}\n");
-
+	dev_info(dev, "probed: LED0(red) LED1(green) LED2(blue) + BTN1..BTN4\n");
+	dev_info(dev, "LEDs:    /sys/bus/platform/devices/lkss-lab4/led{0,1,2}\n");
+	dev_info(dev, "Buttons: /sys/bus/platform/devices/lkss-lab4/button{0,1,2,3}\n");
 	return 0;
+}
+
+/* ── Remove ──────────────────────────────────────────────────────────────── */
+
+static void lab4_gpio_remove(struct platform_device *pdev)
+{
+	struct lab4_gpio *priv = platform_get_drvdata(pdev);
+	int i;
+
+	for (i = 0; i < NUM_LEDS; i++) {
+		priv->led[i].blinking = false;
+		timer_delete_sync(&priv->led[i].timer);
+		gpiod_set_value(priv->led[i].gpiod, 0);
+	}
 }
 
 /* ── Device Tree match table ─────────────────────────────────────────────── */
 
-static const struct of_device_id lkss_gpio_of_match[] = {
-	{ .compatible = "lkss,gpio-demo" },
+static const struct of_device_id lab4_gpio_of_match[] = {
+	{ .compatible = "lkss,lab4" },
 	{ /* sentinel */ }
 };
-MODULE_DEVICE_TABLE(of, lkss_gpio_of_match);
+MODULE_DEVICE_TABLE(of, lab4_gpio_of_match);
 
-/* ── Platform driver structure ───────────────────────────────────────────── */
+/* ── Platform driver ─────────────────────────────────────────────────────── */
 
-static struct platform_driver lkss_gpio_driver = {
-	.probe  = lkss_gpio_probe,
-	/* No .remove() needed – all resources are devm-managed */
+static struct platform_driver lab4_gpio_driver = {
+	.probe  = lab4_gpio_probe,
+	.remove = lab4_gpio_remove,
 	.driver = {
-		.name           = "lkss-gpio",
-		.of_match_table = lkss_gpio_of_match,
-		/*
-		 * dev_groups registers the sysfs attribute group with the
-		 * driver core; files are created after probe() returns 0
-		 * and removed automatically on unbind.
-		 */
-		.dev_groups     = lkss_gpio_groups,
+		.name           = "lkss-lab4",
+		.of_match_table = lab4_gpio_of_match,
+		.dev_groups     = lab4_gpio_groups,
 	},
 };
+module_platform_driver(lab4_gpio_driver);
 
-/*
- * module_platform_driver() is a convenience macro that expands to
- * module_init() / module_exit() wrappers calling
- * platform_driver_register() and platform_driver_unregister().
- */
-module_platform_driver(lkss_gpio_driver);
-
-MODULE_AUTHOR("LKSS Lab <lkss@example.com>");
-MODULE_DESCRIPTION("LKSS lab driver: 3 LED GPIOs + 4 button GPIOs with sysfs");
+MODULE_AUTHOR("LKSS Lab <lkss@nxp.com>");
+MODULE_DESCRIPTION("LKSS Lab 4: GPIO LED blinking via sysfs + button IRQ handlers");
 MODULE_LICENSE("GPL");

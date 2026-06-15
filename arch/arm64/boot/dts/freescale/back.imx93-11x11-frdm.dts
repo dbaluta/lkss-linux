@@ -20,6 +20,7 @@
 		rtc0 = &pcf2131;
 		serial0 = &lpuart1;
 		serial4 = &lpuart5;
+		spi0 = &lpspi3;
 	};
 
 	chosen {
@@ -382,18 +383,6 @@
 	status = "okay";
 };
 
-&lpi2c7 {
-	clock-frequency = <400000>;
-	pinctrl-0 = <&pinctrl_lpi2c7>;
-	pinctrl-names = "default";
-	status = "okay";
-
-	pressure@76 {
-		compatible = "bosch,bmp280";
-		reg = <0x76>;
-	};
-};
-
 &lpuart5 {
 	pinctrl-0 = <&pinctrl_uart5>;
 	pinctrl-names = "default";
@@ -500,6 +489,104 @@
 	pinctrl-0 = <&pinctrl_wdog>;
 	fsl,ext-reset-output;
 	status = "okay";
+};
+
+/*
+ * LPSPI3 – ST7789V 240×240 TFT LCD on the EXPI expansion header.
+ *
+ * The ST7789V has no hardware chip-select output on most breakout
+ * modules; its /CS pin is pulled low on-board (always selected).
+ * We therefore configure GPIO_IO08 as the SPI hardware PCS0 but do
+ * not wire it to the display — the controller drives it during every
+ * transfer but the display ignores it.
+ *
+ * GPIO_IO09 (MISO / SIN) is configured in the pinmux but left
+ * unconnected because the driver uses write-only mode.
+ *
+ * Pin connections (EXPI 40-pin header → display module):
+ *
+ *   EXPI pin  i.MX93 pad   Function       ST7789 pin
+ *   --------  -----------  -------------  ----------
+ *   Pin  1    3.3 V power  VCC supply  →  VCC
+ *   Pin  6    GND          Ground      →  GND
+ *   Pin 19    GPIO_IO10    LPSPI3_SOUT →  SDA  (MOSI data)
+ *   Pin 21    GPIO_IO09    LPSPI3_SIN     (not connected, write-only)
+ *   Pin 23    GPIO_IO11    LPSPI3_SCK  →  SCL  (SPI clock)
+ *   Pin 24    GPIO_IO08    LPSPI3_PCS0    (not connected, CS tied low)
+ *   Pin 11    GPIO_IO12    GPIO2_IO12  →  DC   (Data/Command, high=data)
+ *   Pin 13    GPIO_IO13    GPIO2_IO13  →  RES  (reset, active-low pulse)
+ *   Pin  1    3.3 V power  backlight   →  BLK  (always on)
+ */
+&lpspi3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_lpspi3>;
+	/*
+	 * num-cs tells the LPSPI driver how many chip-selects are managed
+	 * by this controller instance (one display, one CS line).
+	 */
+	num-cs = <1>;
+	status = "okay";
+
+	/*
+	 * reg = <0>: this device uses CS0 (LPSPI3_PCS0 / GPIO_IO08).
+	 *
+	 * compatible = "panel-mipi-dbi-spi": the DRM panel-mipi-dbi driver
+	 * (drivers/gpu/drm/tiny/panel-mipi-dbi.c) matches on this string.
+	 * It also uses the string to derive the firmware filename:
+	 *   panel-mipi-dbi-spi.bin  →  /lib/firmware/panel-mipi-dbi-spi.bin
+	 * That file contains the ST7789V init command sequence.
+	 *
+	 * spi-max-frequency = <40000000>: 40 MHz is well within the ST7789V
+	 * write-mode limit (~65 MHz) and gives comfortable margin on the
+	 * EXPI header traces.
+	 *
+	 * write-only: the display module does not bring out the MISO line,
+	 * so we tell the driver never to attempt a SPI read-back.
+	 *
+	 * dc-gpios / reset-gpios: polarity is GPIO_ACTIVE_HIGH because the
+	 * panel-mipi-dbi driver uses "assert = drive high" convention for
+	 * both signals (it pulses reset high→low to reset the controller,
+	 * and drives DC high for data bytes, low for command bytes).
+	 */
+	display@0 {
+		compatible = "panel-mipi-dbi-spi";
+		reg = <0>;
+		spi-max-frequency = <40000000>;
+
+		dc-gpios    = <&gpio2 12 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio2 13 GPIO_ACTIVE_HIGH>;
+		write-only;
+
+		/*
+		 * format = "r5g6b5": 16-bit RGB565 pixel format.
+		 * Each pixel is two bytes: RRRRR GGGGGG BBBBB.
+		 * This is the native mode used in the firmware init sequence.
+		 */
+		format = "r5g6b5";
+
+		/* Physical panel dimensions in millimetres (1.3" module). */
+		width-mm  = <24>;
+		height-mm = <24>;
+
+		/*
+		 * panel-timing: resolution and blanking for the 240×240 panel.
+		 * All blanking values are 0 because MIPI-DBI type-C (SPI) panels
+		 * have no analogue sync signals — the controller handles internal
+		 * timing.  clock-frequency = <0> means "don't enforce a pixel
+		 * clock"; the DRM core uses it only for informational purposes.
+		 */
+		panel-timing {
+			hactive      = <240>;
+			vactive      = <240>;
+			clock-frequency = <0>;
+			hback-porch  = <0>;
+			hfront-porch = <0>;
+			hsync-len    = <0>;
+			vback-porch  = <0>;
+			vfront-porch = <0>;
+			vsync-len    = <0>;
+		};
+	};
 };
 
 &iomuxc {
@@ -612,20 +699,6 @@
 		fsl,pins = <
 			MX93_PAD_GPIO_IO28__LPI2C3_SDA			0x40000b9e
 			MX93_PAD_GPIO_IO29__LPI2C3_SCL			0x40000b9e
-		>;
-	};
-
-	pinctrl_lpi2c7: lpi2c7grp {
-		fsl,pins = <
-			MX93_PAD_GPIO_IO08__LPI2C7_SDA			0x40000b9e
-			MX93_PAD_GPIO_IO09__LPI2C7_SCL			0x40000b9e
-		>;
-	};
-
-	pinctrl_lpi2c4: lpi2c4grp {
-		fsl,pins = <
-			MX93_PAD_GPIO_IO02__LPI2C4_SDA			0x40000b9e
-			MX93_PAD_GPIO_IO03__LPI2C4_SCL			0x40000b9e
 		>;
 	};
 
@@ -830,114 +903,32 @@
 			MX93_PAD_WDOG_ANY__WDOG1_WDOG_ANY	0x31e
 		>;
 	};
-};
 
-/*
- * EXT2 connector (J601) – 2×20 pin header allocation
- * =====================================================
- *
- * LPI2C4 pin allocation:
- *   Pin  3 (GPIO_IO02) = LPI2C4_SDA    Pin  5 (GPIO_IO03) = LPI2C4_SCL
- *
- * LPSPI3 / ST7789 SPI LCD pin allocation:
- *   Pin 23 (GPIO_IO11) = LPSPI3_SCK    Pin 19 (GPIO_IO10) = LPSPI3_MOSI
- *   Pin 24 (GPIO_IO08) = LPSPI3_CS0    Pin 11 (GPIO_IO17) = ST7789 D/C
- *   Pin 32 (GPIO_IO12) = ST7789 RST    Pin  1             = 3V3
- *
- * GPIO LEDs (active-high, 220 Ω series resistor to GND):
- *   Pin 26 (GPIO_IO05) = LED0 yellow
- *   Pin 12 (GPIO_IO06) = LED1 red
- *
- * PWM output (lkss-lab4):
- *   Pin  7 (GPIO_IO04) = TPM3_CH0
- *
- * GPIO Buttons (active-low, external 10 kΩ pull-up to 3V3):
- *   Pin 22 (GPIO_IO13) = BTN0    Pin 29 (GPIO_IO14) = BTN1
- *   Pin 31 (GPIO_IO15) = BTN2    Pin 27 (GPIO_IO16) = BTN3
- *
- * Full pin-header map (odd pins left column, even pins right column):
- *
- *   Pin  1: 3V3 (PWR)             | Pin  2: 5V  (PWR)
- *   Pin  3: GPIO_IO02 – LPI2C4_SDA| Pin  4: 5V  (PWR)
- *   Pin  5: GPIO_IO03 – LPI2C4_SCL| Pin  6: GND
- *   Pin  7: GPIO_IO04 – TPM3_CH0 (PWM, lkss-lab4) | Pin  8: GPIO_IO01  (free)
- *   Pin  9: GND                   | Pin 10: GPIO_IO00  (free)
- *   Pin 11: GPIO_IO17 – ST7789 DC | Pin 12: GPIO_IO06 – LED2
- *   Pin 13: GPIO_IO18  (free)     | Pin 14: GND
- *   Pin 15: GPIO_IO19  (free)     | Pin 16: GPIO_IO21  (free)
- *   Pin 17: GND                   | Pin 18: GPIO_IO22  (free)
- *   Pin 19: GPIO_IO10 – LPSPI3_MOSI| Pin 20: GND
- *   Pin 21: GPIO_IO09 – LPSPI3_MISO(nc)| Pin 22: GPIO_IO13 – BTN0
- *   Pin 23: GPIO_IO11 – LPSPI3_SCK| Pin 24: GPIO_IO08 – LPSPI3_CS0
- *   Pin 25: GND                   | Pin 26: GPIO_IO05 – LED1
- *   Pin 27: GPIO_IO16 – BTN3      | Pin 28: GPIO_IO23  (free)
- *   Pin 29: GPIO_IO14 – BTN1      | Pin 30: GND
- *   Pin 31: GPIO_IO15 – BTN2      | Pin 32: GPIO_IO12 – ST7789 RST
- *   Pin 33: GPIO_IO24  (free)     | Pin 34: GND
- *   Pin 35: GPIO_IO26  (free)     | Pin 36: GPIO_IO27  (free)
- *   Pin 37: GPIO_IO28  (free)     | Pin 38: GPIO_IO29  (free)
- *   Pin 39: GND                   | Pin 40: GPIO_IO30  (free)
- */
-
-&iomuxc {
-#if 0
-        pinctrl_lpspi3_st7789: lpspi3-st7789grp {
-                fsl,pins = <
-                        /* LPSPI3 bus pins */
-                        MX93_PAD_GPIO_IO11__LPSPI3_SCK          0x31e
-                        MX93_PAD_GPIO_IO10__LPSPI3_SOUT         0x31e
-                        MX93_PAD_GPIO_IO08__LPSPI3_PCS0         0x31e
-
-                        /* ST7789 control GPIOs */
-                        MX93_PAD_GPIO_IO17__GPIO2_IO17          0x31e
-                        MX93_PAD_GPIO_IO12__GPIO2_IO12          0x31e
-                >;
-        };
-#endif
-	pinctrl_lpspi4_st7789: lpspi4-st7789grp {
-                fsl,pins = <
-                        /* LPSPI3 bus pins */
-                        MX93_PAD_GPIO_IO21__LPSPI4_SCK          0x31e
-                        MX93_PAD_GPIO_IO20__LPSPI4_SOUT         0x31e
-
-                        /* ST7789 control GPIOs */
-                        MX93_PAD_GPIO_IO13__GPIO2_IO13          0x31e
-                        MX93_PAD_GPIO_IO19__GPIO2_IO19          0x31e
-                >;
-        };
-
-        pinctrl_tpm3_lab4: tpm3-lab4grp {
-                fsl,pins = <
-                        /* GPIO_IO04 → TPM3_CH0, EXT2 pin 7 */
-                        MX93_PAD_GPIO_IO04__TPM3_CH0            0x57e
-                >;
-        };
-};
-
-&tpm3 {
-        pinctrl-names = "default";
-        pinctrl-0 = <&pinctrl_tpm3_lab4>;
-        status = "okay";
-};
-
-&lpspi4 {
-        #address-cells = <1>;
-        #size-cells = <0>;
-        pinctrl-names = "default";
-        pinctrl-0 = <&pinctrl_lpspi4_st7789>;
-        status = "okay";
-
-        st7789: st7789@0 {
-                compatible = "sitronix,st7789v";
-                reg = <0>;
-                spi-max-frequency = <32000000>;
-
-                dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
-                reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
-
-                width    = <240>;
-                height   = <240>;
-                rotate   = <0>;
-                buswidth = <8>;
-        };
+	/*
+	 * LPSPI3 pin group for the ST7789V display.
+	 *
+	 * Pad config value 0x51e breakdown (i.MX93 IOMUXC_SW_PAD_CTL):
+	 *   DSE [2:0] = 6  → 133 Ω drive strength (good for 40 MHz SPI)
+	 *   FSEL [3]  = 1  → fast slew rate
+	 *   ODE  [4]  = 1  → open-drain disabled (push-pull)
+	 *   PUE  [8]  = 0
+	 *   PUS  [9]  = 1  → 100 kΩ pull-up on SIN / PCS0 so lines don't float
+	 * A value of 0x31e is used for the GPIO control signals (DC, RST)
+	 * where high drive strength is less important.
+	 *
+	 * All six signals share a single pinctrl state so they are all
+	 * configured atomically when the LPSPI3 controller is probed.
+	 */
+	pinctrl_lpspi3: lpspi3grp {
+		fsl,pins = <
+			/* SPI bus lines (EXPI pins 23/19/21/24) */
+			MX93_PAD_GPIO_IO11__LPSPI3_SCK		0x51e	/* EXPI pin 23 → SCL */
+			MX93_PAD_GPIO_IO10__LPSPI3_SOUT		0x51e	/* EXPI pin 19 → SDA */
+			MX93_PAD_GPIO_IO09__LPSPI3_SIN		0x51e	/* EXPI pin 21 (not wired) */
+			MX93_PAD_GPIO_IO08__LPSPI3_PCS0		0x51e	/* EXPI pin 24 (not wired) */
+			/* Display control GPIOs */
+			MX93_PAD_GPIO_IO12__GPIO2_IO12		0x31e	/* EXPI pin 11 → DC  */
+			MX93_PAD_GPIO_IO13__GPIO2_IO13		0x31e	/* EXPI pin 13 → RES */
+		>;
+	};
 };

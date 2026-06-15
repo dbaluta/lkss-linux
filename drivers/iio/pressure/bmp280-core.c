@@ -3224,6 +3224,7 @@ int bmp280_common_probe(struct device *dev,
 		dev_err(data->dev, "failed to read chip id\n");
 		return ret;
 	}
+	pr_info("xxX: This is chip ID %08x\n", chip_id);
 
 	for (i = 0; i < data->chip_info->num_chip_id; i++) {
 		if (chip_id == data->chip_info->chip_id[i]) {
@@ -3300,6 +3301,8 @@ int bmp280_common_probe(struct device *dev,
 	ret = devm_add_action_or_reset(dev, bmp280_pm_disable, dev);
 	if (ret)
 		return ret;
+
+	pr_info("xxx: register iio device\n");
 
 	return devm_iio_device_register(dev, indio_dev);
 }

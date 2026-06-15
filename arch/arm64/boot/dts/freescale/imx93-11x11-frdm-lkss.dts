@@ -88,6 +88,11 @@
 /* ── BME280 sensor on LPI2C4 ─────────────────────────────────────────────── */
 
 &lpi2c4 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_lpi2c4>;
+	status = "okay";
+
 	bme280: bme280@76 {
 		compatible = "bosch,bme280";
 		reg = <0x76>;

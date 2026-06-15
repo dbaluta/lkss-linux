@@ -13,6 +13,8 @@ static int bmp280_i2c_probe(struct i2c_client *client)
 
 	chip_info = i2c_get_match_data(client);
 
+	dev_info(&client->dev, "bmp280_i2c_probe called\n");
+
 	regmap = devm_regmap_init_i2c(client, chip_info->regmap_config);
 	if (IS_ERR(regmap)) {
 		dev_err(&client->dev, "failed to allocate register map\n");
