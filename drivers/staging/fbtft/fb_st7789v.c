@@ -144,6 +144,17 @@ static int init_display(struct fbtft_par *par)
 {
 	int rc;
 
+	/*
+	 * LKSS lab3 debugging: force the existing fbtft trace macros on
+	 * unconditionally, so every register write/reset gets hex-dumped
+	 * to dmesg for side-by-side comparison against lkss_st7789_sol.c's
+	 * own "cmd"/"data" trace -- this driver is built into the kernel
+	 * image so the usual `debug=` module param can't be set at insmod
+	 * time.
+	 */
+	par->debug |= DEBUG_WRITE_REGISTER | DEBUG_RESET | DEBUG_INIT_DISPLAY |
+		      DEBUG_REQUEST_GPIOS;
+
 	par->fbtftops.reset(par);
 
 	rc = init_tearing_effect_line(par);

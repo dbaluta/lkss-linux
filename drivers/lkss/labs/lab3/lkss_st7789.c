@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * st7789.c - LKSS Lab 3: Minimal SPI driver for the ST7789 240x240 TFT display
+ * lkss_st7789.c - LKSS Lab 3: Minimal SPI driver for the ST7789 240x240 TFT display
  *
  * This driver is deliberately simple and educational.  It does not use the
  * fbtft staging framework.  Every primitive is written from scratch so that
  * students understand exactly what goes over the SPI bus.
+ *
+ * Each TODO function body below is a stub that returns -EOPNOTSUPP (or does
+ * nothing, for void functions).  Replace the stub with a working
+ * implementation following the instructions in the comment block above it.
+ * See lkss_st7789_sol.c for the complete reference solution.
  *
  * Hardware connections on the i.MX93 FRDM EXT2 header (J601):
  *
@@ -120,8 +125,8 @@ struct st7789_priv {
  */
 static int st7789_write_cmd(struct st7789_priv *priv, u8 cmd)
 {
-	gpiod_set_value(priv->dc, 0);
-	return spi_write(priv->spi, &cmd, 1);
+	/* TODO 1: drive D/C LOW, then spi_write() the single command byte */
+	return -EOPNOTSUPP;
 }
 
 /**
@@ -138,8 +143,8 @@ static int st7789_write_cmd(struct st7789_priv *priv, u8 cmd)
 static int st7789_write_data(struct st7789_priv *priv,
 			     const u8 *buf, size_t len)
 {
-	gpiod_set_value(priv->dc, 1);
-	return spi_write(priv->spi, buf, len);
+	/* TODO 1: drive D/C HIGH, then spi_write() the data buffer */
+	return -EOPNOTSUPP;
 }
 
 /**
@@ -174,10 +179,7 @@ static inline int st7789_write_data_byte(struct st7789_priv *priv, u8 byte)
  */
 static void st7789_hw_reset(struct st7789_priv *priv)
 {
-	gpiod_set_value(priv->reset, 1);
-	msleep(15);
-	gpiod_set_value(priv->reset, 0);
-	msleep(120);
+	/* TODO 2: assert RESX low >=15ms, deassert, then wait >=120ms */
 }
 
 /* ==================================================================
@@ -205,37 +207,12 @@ static void st7789_hw_reset(struct st7789_priv *priv)
  */
 static int st7789_init_display(struct st7789_priv *priv)
 {
-	int ret;
-
-	ret = st7789_write_cmd(priv, ST7789_SWRESET);
-	if (ret) return ret;
-	msleep(150);
-
-	ret = st7789_write_cmd(priv, ST7789_SLPOUT);
-	if (ret) return ret;
-	msleep(500);
-
-	ret = st7789_write_cmd(priv, ST7789_COLMOD);
-	if (ret) return ret;
-	ret = st7789_write_data_byte(priv, ST7789_COLMOD_RGB565);
-	if (ret) return ret;
-
-	ret = st7789_write_cmd(priv, ST7789_MADCTL);
-	if (ret) return ret;
-	ret = st7789_write_data_byte(priv, ST7789_MADCTL_NORMAL);
-	if (ret) return ret;
-
-	ret = st7789_write_cmd(priv, ST7789_INVON);
-	if (ret) return ret;
-
-	ret = st7789_write_cmd(priv, ST7789_NORON);
-	if (ret) return ret;
-
-	ret = st7789_write_cmd(priv, ST7789_DISPON);
-	if (ret) return ret;
-	msleep(100);
-
-	return 0;
+	/*
+	 * TODO 3: send SWRESET, SLPOUT, COLMOD(0x55), MADCTL(0x00), INVON,
+	 * NORON, DISPON in order, with the delays noted in the comment
+	 * block above.  Check every return value and propagate errors.
+	 */
+	return -EOPNOTSUPP;
 }
 
 /* ==================================================================
@@ -270,21 +247,8 @@ static int st7789_init_display(struct st7789_priv *priv)
 static int st7789_set_addr_win(struct st7789_priv *priv,
 			       u16 x0, u16 y0, u16 x1, u16 y1)
 {
-	u8 col[4] = { x0 >> 8, x0 & 0xff, x1 >> 8, x1 & 0xff };
-	u8 row[4] = { y0 >> 8, y0 & 0xff, y1 >> 8, y1 & 0xff };
-	int ret;
-
-	ret = st7789_write_cmd(priv, ST7789_CASET);
-	if (ret) return ret;
-	ret = st7789_write_data(priv, col, 4);
-	if (ret) return ret;
-
-	ret = st7789_write_cmd(priv, ST7789_RASET);
-	if (ret) return ret;
-	ret = st7789_write_data(priv, row, 4);
-	if (ret) return ret;
-
-	return st7789_write_cmd(priv, ST7789_RAMWR);
+	/* TODO 4: send CASET(col) + RASET(row) + RAMWR, see comment above */
+	return -EOPNOTSUPP;
 }
 
 /**
@@ -298,29 +262,12 @@ static int st7789_set_addr_win(struct st7789_priv *priv,
  */
 static int st7789_fill(struct st7789_priv *priv, u16 color)
 {
-	u8 color_hi = color >> 8;
-	u8 color_lo = color & 0xff;
-	u8 *line;
-	int ret = 0, x, y;
-
-	ret = st7789_set_addr_win(priv, 0, 0, priv->width - 1, priv->height - 1);
-	if (ret) return ret;
-
-	line = kmalloc(priv->width * 2, GFP_KERNEL);
-	if (!line) return -ENOMEM;
-
-	for (x = 0; x < priv->width; x++) {
-		line[x * 2]     = color_hi;
-		line[x * 2 + 1] = color_lo;
-	}
-
-	for (y = 0; y < priv->height; y++) {
-		ret = st7789_write_data(priv, line, priv->width * 2);
-		if (ret) break;
-	}
-
-	kfree(line);
-	return ret;
+	/*
+	 * TODO 4: set the full-panel address window, allocate one scanline
+	 * buffer, fill it with the repeated color, then send it once per
+	 * row.  Free the buffer before returning.
+	 */
+	return -EOPNOTSUPP;
 }
 
 /* ==================================================================
@@ -352,34 +299,11 @@ static int st7789_fill(struct st7789_priv *priv, u16 color)
 static int st7789_fill_rect(struct st7789_priv *priv,
 			    u16 x, u16 y, u16 w, u16 h, u16 color)
 {
-	u8 color_hi = color >> 8;
-	u8 color_lo = color & 0xff;
-	u8 *line;
-	int ret = 0;
-	u16 i, row;
-
-	if (x >= priv->width || y >= priv->height) return 0;
-	if (x + w > priv->width)  w = priv->width  - x;
-	if (y + h > priv->height) h = priv->height - y;
-
-	ret = st7789_set_addr_win(priv, x, y, x + w - 1, y + h - 1);
-	if (ret) return ret;
-
-	line = kmalloc(w * 2, GFP_KERNEL);
-	if (!line) return -ENOMEM;
-
-	for (i = 0; i < w; i++) {
-		line[i * 2]     = color_hi;
-		line[i * 2 + 1] = color_lo;
-	}
-
-	for (row = 0; row < h; row++) {
-		ret = st7789_write_data(priv, line, w * 2);
-		if (ret) break;
-	}
-
-	kfree(line);
-	return ret;
+	/*
+	 * TODO 5: clamp (x,y,w,h) to the panel, set the address window,
+	 * allocate/fill one row buffer, send it h times, then free it.
+	 */
+	return -EOPNOTSUPP;
 }
 
 /* ==================================================================
@@ -403,15 +327,8 @@ static int st7789_fill_rect(struct st7789_priv *priv,
 static int st7789_draw_pixel(struct st7789_priv *priv,
 			     u16 x, u16 y, u16 color)
 {
-	u8 pixel[2] = { color >> 8, color & 0xff };
-	int ret;
-
-	if (x >= priv->width || y >= priv->height) return 0;
-
-	ret = st7789_set_addr_win(priv, x, y, x, y);
-	if (ret) return ret;
-
-	return st7789_write_data(priv, pixel, 2);
+	/* TODO 6: bounds-check, set a 1x1 address window, send 2 color bytes */
+	return -EOPNOTSUPP;
 }
 
 /* ==================================================================
@@ -450,24 +367,8 @@ static int st7789_draw_pixel(struct st7789_priv *priv,
 static int st7789_draw_line(struct st7789_priv *priv,
 			    int x0, int y0, int x1, int y1, u16 color)
 {
-	int dx  =  abs(x1 - x0);
-	int dy  = -abs(y1 - y0);
-	int sx  = (x0 < x1) ? 1 : -1;
-	int sy  = (y0 < y1) ? 1 : -1;
-	int err = dx + dy;
-	int e2, ret;
-
-	for (;;) {
-		ret = st7789_draw_pixel(priv, (u16)x0, (u16)y0, color);
-		if (ret) return ret;
-
-		if (x0 == x1 && y0 == y1) break;
-
-		e2 = 2 * err;
-		if (e2 >= dy) { if (x0 == x1) break; err += dy; x0 += sx; }
-		if (e2 <= dx) { if (y0 == y1) break; err += dx; y0 += sy; }
-	}
-	return 0;
+	/* TODO 7: Bresenham line algorithm, see comment block above */
+	return -EOPNOTSUPP;
 }
 
 /* ==================================================================
@@ -498,29 +399,8 @@ static int st7789_draw_line(struct st7789_priv *priv,
 static int st7789_draw_circle(struct st7789_priv *priv,
 			      int cx, int cy, int r, u16 color)
 {
-	int x = 0, y = r, d = 1 - r, ret;
-
-#define PLOT(px, py) do { \
-	ret = st7789_draw_pixel(priv, (u16)(px), (u16)(py), color); \
-	if (ret) return ret; \
-} while (0)
-
-	while (x <= y) {
-		PLOT(cx + x, cy + y); PLOT(cx - x, cy + y);
-		PLOT(cx + x, cy - y); PLOT(cx - x, cy - y);
-		PLOT(cx + y, cy + x); PLOT(cx - y, cy + x);
-		PLOT(cx + y, cy - x); PLOT(cx - y, cy - x);
-
-		if (d < 0) {
-			d += 2 * x + 3;
-		} else {
-			d += 2 * (x - y) + 5;
-			y--;
-		}
-		x++;
-	}
-#undef PLOT
-	return 0;
+	/* TODO 8: midpoint circle algorithm, 8-fold symmetry, see above */
+	return -EOPNOTSUPP;
 }
 
 /* ==================================================================
@@ -549,16 +429,8 @@ static int st7789_draw_circle(struct st7789_priv *priv,
 static int st7789_fill_circle(struct st7789_priv *priv,
 			      int cx, int cy, int r, u16 color)
 {
-	int dy, dx, ret;
-
-	for (dy = -r; dy <= r; dy++) {
-		dx = (int)int_sqrt((u32)(r * r - dy * dy));
-		ret = st7789_fill_rect(priv,
-				       (u16)(cx - dx), (u16)(cy + dy),
-				       (u16)(2 * dx + 1), 1, color);
-		if (ret) return ret;
-	}
-	return 0;
+	/* TODO 9: for each row dy in [-r,r], fill_rect() one horizontal chord */
+	return -EOPNOTSUPP;
 }
 
 /* ==================================================================
@@ -584,29 +456,12 @@ static int st7789_fill_circle(struct st7789_priv *priv,
  */
 static int st7789_demo(struct st7789_priv *priv)
 {
-	int ret;
-
-	ret = st7789_fill(priv, 0x0000);
-	if (ret) return ret;
-
-	st7789_fill_rect(priv,   0,   0, 240,   4, 0xF800);
-	st7789_fill_rect(priv,   0, 236, 240,   4, 0xF800);
-	st7789_fill_rect(priv,   0,   0,   4, 240, 0xF800);
-	st7789_fill_rect(priv, 236,   0,   4, 240, 0xF800);
-
-	ret = st7789_fill_circle(priv, 60, 60, 50, 0x07E0);
-	if (ret) return ret;
-
-	ret = st7789_fill_rect(priv, 130, 130, 100, 100, 0x001F);
-	if (ret) return ret;
-
-	ret = st7789_draw_line(priv, 5, 5, 234, 234, 0xFFFF);
-	if (ret) return ret;
-
-	ret = st7789_draw_circle(priv, 120, 120, 40, 0xFFE0);
-	if (ret) return ret;
-
-	return 0;
+	/*
+	 * TODO 10: black background, red border, green filled circle,
+	 * blue rectangle, white diagonal line, yellow circle outline.
+	 * See the parameters in the comment block above.
+	 */
+	return -EOPNOTSUPP;
 }
 
 /* ------------------------------------------------------------------
@@ -758,7 +613,7 @@ MODULE_DEVICE_TABLE(spi, st7789_spi_ids);
 /* spi_driver registration record */
 static struct spi_driver st7789_driver = {
 	.driver = {
-		.name           = "st7789",
+		.name           = "lkss-st7789",
 		.of_match_table = st7789_of_match,
 	},
 	.probe    = st7789_probe,

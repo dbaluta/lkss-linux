@@ -53,6 +53,24 @@
 		};
 	};
 
+	/* LKSS lab 4: 3 LEDs + 4 buttons on EXT2, driven by platform_gpio.c */
+	lkss_lab4: lkss-lab4 {
+		compatible = "lkss,lab4";
+
+		led-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>,
+			    <&gpio2  14 GPIO_ACTIVE_HIGH>,
+			    <&gpio2 15 GPIO_ACTIVE_HIGH>;
+
+		button-gpios = <&gpio2 17 GPIO_ACTIVE_LOW>,
+				<&gpio2 18 GPIO_ACTIVE_LOW>,
+				<&gpio2 27 GPIO_ACTIVE_LOW>,
+				<&gpio2 22 GPIO_ACTIVE_LOW>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_lkss_gpio>;
+		status = "okay";
+	};
+
 	reg_usdhc2_vmmc: regulator-usdhc2 {
 		compatible = "regulator-fixed";
 		off-on-delay-us = <12000>;
@@ -376,6 +394,19 @@
 	};
 };
 
+/* LKSS lab: BME280 environmental sensor on EXT2 */
+&lpi2c4 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_lpi2c4>;
+	status = "okay";
+
+	bme280: bme280@76 {
+		compatible = "bosch,bme280";
+		reg = <0x76>;
+	};
+};
+
 &lpuart1 { /* console */
 	pinctrl-0 = <&pinctrl_uart1>;
 	pinctrl-names = "default";
@@ -626,6 +657,20 @@
 		fsl,pins = <
 			MX93_PAD_GPIO_IO02__LPI2C4_SDA			0x40000b9e
 			MX93_PAD_GPIO_IO03__LPI2C4_SCL			0x40000b9e
+		>;
+	};
+
+	/* LKSS lab 4: 3 LEDs + 4 buttons, external pull-ups required on buttons */
+	pinctrl_lkss_gpio: lkss-gpiogrp {
+		fsl,pins = <
+			MX93_PAD_GPIO_IO14__GPIO2_IO14		0x31e
+			MX93_PAD_GPIO_IO04__GPIO2_IO04		0x31e
+			MX93_PAD_GPIO_IO15__GPIO2_IO15		0x31e
+
+			MX93_PAD_GPIO_IO17__GPIO2_IO17		0x31e
+			MX93_PAD_GPIO_IO18__GPIO2_IO18		0x31e
+			MX93_PAD_GPIO_IO27__GPIO2_IO27		0x31e
+			MX93_PAD_GPIO_IO22__GPIO2_IO22		0x31e
 		>;
 	};
 
@@ -927,6 +972,17 @@
         pinctrl-0 = <&pinctrl_lpspi4_st7789>;
         status = "okay";
 
+#if 1
+	lkss_st7789: st7789@0 {
+		compatible = "lkss,st7789";
+		reg = <0>;
+		spi-max-frequency = <32000000>;
+
+		dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
+       };
+#endif
+#if 0
         st7789: st7789@0 {
                 compatible = "sitronix,st7789v";
                 reg = <0>;
@@ -940,4 +996,5 @@
                 rotate   = <0>;
                 buswidth = <8>;
         };
+#endif
 };
