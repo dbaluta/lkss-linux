@@ -36,6 +36,17 @@
 #include <linux/of.h>
 #include <linux/fixp-arith.h> /* fixp_sin16() -- no FPU in kernel space */
 #include <linux/random.h>    /* get_random_u32() */
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <linux/mm.h>
+#include <linux/vmalloc.h>
+#include <linux/mutex.h>
+#include <linux/uaccess.h>
+#include <linux/ioctl.h>
+
+/* Single ioctl: flush the mmap'd framebuffer to the panel */
+#define ST7789_IOC_MAGIC  'V'
+#define ST7789_FLUSH      _IO(ST7789_IOC_MAGIC, 0)
 
 /* ------------------------------------------------------------------
  * ST7789 command opcodes (ST7789VW datasheet, chapter 9)
@@ -80,6 +91,10 @@ struct st7789_priv {
 	struct gpio_desc   *reset;
 	u16                 width;
 	u16                 height;
+	u8                 *fbuf;    /* RGB565 LE framebuffer, vmalloc'd  */
+	size_t              fbsize;
+	struct miscdevice   misc;
+	struct mutex        lock;    /* serialises SPI access from ioctl  */
 };
 
 /*
@@ -494,8 +509,7 @@ static int st7789_demo(struct st7789_priv *priv)
 	ret = st7789_demo_bounce(priv);
 	if (ret) return ret;
 
-	ret = st7789_demo_life(priv);
-	if (ret) return ret;
+	/* st7789_demo_life(priv); -- commented out, takes too long at probe */
 
 	dev_info(dev, "demo: done\n");
 	return 0;
@@ -863,19 +877,115 @@ out:
 	return ret;
 }
 
+/*
+ * st7789_flush - push the vmalloc'd framebuffer to the display over SPI.
+ * The framebuffer holds pixels in native LE u16 order (as written by
+ * userspace); the ST7789 expects each 16-bit pixel big-endian, so we
+ * swap the two bytes of every pixel while building each scanline.
+ */
+static int st7789_flush(struct st7789_priv *priv)
+{
+	u8 *line;
+	int ret = 0, y, x;
+
+	ret = st7789_set_addr_win(priv, 0, 0, priv->width - 1, priv->height - 1);
+	if (ret)
+		return ret;
+
+	line = kmalloc(priv->width * 2, GFP_KERNEL);
+	if (!line)
+		return -ENOMEM;
+
+	for (y = 0; y < priv->height; y++) {
+		const u8 *src = priv->fbuf + y * priv->width * 2;
+
+		for (x = 0; x < priv->width; x++) {
+			line[x * 2]     = src[x * 2 + 1];
+			line[x * 2 + 1] = src[x * 2];
+		}
+		ret = st7789_write_data(priv, line, priv->width * 2);
+		if (ret)
+			break;
+	}
+
+	kfree(line);
+	return ret;
+}
+
+static int st7789_fb_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static ssize_t st7789_fb_write(struct file *file, const char __user *buf,
+			       size_t count, loff_t *ppos)
+{
+	struct st7789_priv *priv = container_of(file->private_data,
+						struct st7789_priv, misc);
+	loff_t offset = *ppos;
+	size_t n;
+
+	if (offset >= (loff_t)priv->fbsize)
+		return -ENOSPC;
+	n = min(count, priv->fbsize - (size_t)offset);
+	if (copy_from_user(priv->fbuf + offset, buf, n))
+		return -EFAULT;
+	*ppos += n;
+	return n;
+}
+
+static long st7789_fb_ioctl(struct file *file, unsigned int cmd,
+			    unsigned long arg)
+{
+	struct st7789_priv *priv = container_of(file->private_data,
+						struct st7789_priv, misc);
+	int ret;
+
+	if (cmd != ST7789_FLUSH)
+		return -ENOTTY;
+
+	mutex_lock(&priv->lock);
+	ret = st7789_flush(priv);
+	mutex_unlock(&priv->lock);
+	return ret;
+}
+
+/*
+ * remap_vmalloc_range() checks that the backing allocation has VM_USERMAP
+ * set (mm/vmalloc.c); only vmalloc_user() sets that flag, not vzalloc().
+ */
+static int st7789_fb_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct st7789_priv *priv = container_of(file->private_data,
+						struct st7789_priv, misc);
+
+	if (vma->vm_pgoff != 0)
+		return -EINVAL;
+	return remap_vmalloc_range(vma, priv->fbuf, 0);
+}
+
+static const struct file_operations st7789_fops = {
+	.owner          = THIS_MODULE,
+	.open           = st7789_fb_open,
+	.write          = st7789_fb_write,
+	.unlocked_ioctl = st7789_fb_ioctl,
+	.mmap           = st7789_fb_mmap,
+	.llseek         = default_llseek,
+};
+
 static int st7789_probe(struct spi_device *spi)
 {
 	struct st7789_priv *priv;
 	int ret;
 
-	pr_info("Now doing probe, spi %px\n", spi);
-
+#if 0
 	spi->mode = SPI_MODE_0;
 	ret = spi_setup(spi);
 	if (ret < 0) {
 		dev_err(&spi->dev, "spi_setup() failed: %d\n", ret);
 		return ret;
 	}
+#endif
 
 	dev_info(&spi->dev, "ST7789 probe: speed=%u Hz mode=0x%02x\n",
 		 spi->max_speed_hz, spi->mode);
@@ -911,13 +1021,30 @@ static int st7789_probe(struct spi_device *spi)
 		return ret;
 	}
 
+	mutex_init(&priv->lock);
+	priv->fbsize = (size_t)priv->width * priv->height * 2;
+	priv->fbuf   = vmalloc_user(priv->fbsize);
+	if (!priv->fbuf)
+		return -ENOMEM;
+
 	ret = st7789_demo(priv);
 	if (ret) {
-		dev_err(&spi->dev, "demo pattern failed: %d\n", ret);
+		dev_err(&spi->dev, "demo failed: %d\n", ret);
+		vfree(priv->fbuf);
 		return ret;
 	}
 
-	dev_info(&spi->dev, "ST7789 240x240 initialized successfully\n");
+	priv->misc.minor = MISC_DYNAMIC_MINOR;
+	priv->misc.name  = "st7789";
+	priv->misc.fops  = &st7789_fops;
+	ret = misc_register(&priv->misc);
+	if (ret) {
+		dev_err(&spi->dev, "misc_register failed: %d\n", ret);
+		vfree(priv->fbuf);
+		return ret;
+	}
+
+	dev_info(&spi->dev, "ST7789 ready at /dev/st7789\n");
 	return 0;
 }
 
@@ -925,8 +1052,9 @@ static void st7789_remove(struct spi_device *spi)
 {
 	struct st7789_priv *priv = spi_get_drvdata(spi);
 
+	misc_deregister(&priv->misc);
+	vfree(priv->fbuf);
 	st7789_write_cmd(priv, ST7789_DISPOFF);
-
 	dev_info(&spi->dev, "ST7789 removed\n");
 }
 

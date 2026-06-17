@@ -30,7 +30,9 @@
  *   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
  *        M=drivers/lkss/labs/lab3 -j$(nproc)
  *
- * Lab structure (10 TODOs):
+ * Lab structure (13 TODOs):
+ *
+ * Part 1 – Kernel driver primitives:
  *   TODO 1  - Low-level SPI primitives: write_cmd and write_data
  *   TODO 2  - Hardware reset
  *   TODO 3  - Initialization sequence
@@ -41,6 +43,11 @@
  *   TODO 8  - Midpoint circle outline
  *   TODO 9  - Filled circle
  *   TODO 10 - Demo pattern (ties all primitives together)
+ *
+ * Part 2 – Userspace interface via /dev/st7789:
+ *   TODO 11 - Add miscdevice fields to st7789_priv
+ *   TODO 12 - Implement framebuffer flush and file operations
+ *   TODO 13 - Register miscdevice in probe(), clean up in remove()
  */
 
 #include <linux/module.h>
@@ -50,6 +57,18 @@
 #include <linux/kernel.h>   /* abs(), int_sqrt() */
 #include <linux/slab.h>     /* kmalloc(), kfree() */
 #include <linux/of.h>
+/* TODO 11: add the headers below for the miscdevice interface */
+/* #include <linux/miscdevice.h> */
+/* #include <linux/fs.h>         */
+/* #include <linux/mm.h>         */
+/* #include <linux/vmalloc.h>    */
+/* #include <linux/mutex.h>      */
+/* #include <linux/uaccess.h>    */
+/* #include <linux/ioctl.h>      */
+
+/* TODO 11: add these ioctl defines when you implement the miscdevice */
+/* #define ST7789_IOC_MAGIC  'V'                  */
+/* #define ST7789_FLUSH      _IO(ST7789_IOC_MAGIC, 0) */
 
 /* ------------------------------------------------------------------
  * ST7789 command opcodes (ST7789VW datasheet, chapter 9)
@@ -94,6 +113,22 @@ struct st7789_priv {
 	struct gpio_desc   *reset;  /* hardware reset GPIO             */
 	u16                 width;  /* panel width  in pixels          */
 	u16                 height; /* panel height in pixels          */
+	/* ==================================================================
+	 * TODO 11 - Add miscdevice fields
+	 *
+	 * To expose /dev/st7789 to userspace, add these four fields:
+	 *
+	 *   u8               *fbuf;   vmalloc_user()'d RGB565 framebuffer
+	 *   size_t            fbsize; total size in bytes (width * height * 2)
+	 *   struct miscdevice misc;   registered under the name "st7789"
+	 *   struct mutex      lock;   serialises SPI transfers from ioctl
+	 *
+	 * Uncomment the lines below and add the required headers at the top.
+	 * ================================================================== */
+	/* u8               *fbuf;   */
+	/* size_t            fbsize; */
+	/* struct miscdevice misc;   */
+	/* struct mutex      lock;   */
 };
 
 /* ==================================================================
@@ -464,6 +499,80 @@ static int st7789_demo(struct st7789_priv *priv)
 	return -EOPNOTSUPP;
 }
 
+/* ==================================================================
+ * TODO 12 - Framebuffer flush and file operations
+ *
+ * Implement the five functions below and the file_operations struct.
+ * Together they form the /dev/st7789 character device interface.
+ *
+ * st7789_flush()
+ *   Walk the vmalloc framebuffer row by row.  For each row, swap the
+ *   two bytes of every RGB565 pixel (fbuf is LE, SPI needs BE), then
+ *   send the row via st7789_set_addr_win() + st7789_write_data().
+ *   Allocate one scanline buffer (width * 2 bytes) with kmalloc once
+ *   before the outer loop and kfree it on exit.
+ *
+ * st7789_fb_open()
+ *   Nothing to do; return 0.
+ *
+ * st7789_fb_write()
+ *   Accept a positional write into priv->fbuf.  Use copy_from_user().
+ *   Respect *ppos and priv->fbsize; update *ppos and return bytes written.
+ *
+ * st7789_fb_ioctl()
+ *   Accept only ST7789_FLUSH.  Lock priv->lock, call st7789_flush(),
+ *   unlock.  Return -ENOTTY for any other command.
+ *
+ * st7789_fb_mmap()
+ *   Delegate to remap_vmalloc_range(vma, priv->fbuf, 0).
+ *   Reject non-zero vm_pgoff with -EINVAL.
+ *   Note: priv->fbuf must be vmalloc_user() — vzalloc() lacks VM_USERMAP.
+ *
+ * In every handler, recover priv with:
+ *   container_of(file->private_data, struct st7789_priv, misc)
+ * ================================================================== */
+
+static int st7789_flush(struct st7789_priv *priv)
+{
+	/* TODO 12: byteswap LE framebuffer rows and send to display */
+	return -EOPNOTSUPP;
+}
+
+static int st7789_fb_open(struct inode *inode, struct file *file)
+{
+	/* TODO 12: nothing to initialise; open always succeeds */
+	return 0;
+}
+
+static ssize_t st7789_fb_write(struct file *file, const char __user *buf,
+			       size_t count, loff_t *ppos)
+{
+	/* TODO 12: copy_from_user into priv->fbuf at *ppos */
+	return -EOPNOTSUPP;
+}
+
+static long st7789_fb_ioctl(struct file *file, unsigned int cmd,
+			    unsigned long arg)
+{
+	/* TODO 12: handle ST7789_FLUSH (with lock); return -ENOTTY otherwise */
+	return -EOPNOTSUPP;
+}
+
+static int st7789_fb_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	/* TODO 12: remap_vmalloc_range(vma, priv->fbuf, 0) */
+	return -EOPNOTSUPP;
+}
+
+static const struct file_operations st7789_fops = {
+	.owner          = THIS_MODULE,
+	.open           = st7789_fb_open,
+	.write          = st7789_fb_write,
+	.unlocked_ioctl = st7789_fb_ioctl,
+	.mmap           = st7789_fb_mmap,
+	.llseek         = default_llseek,
+};
+
 /* ------------------------------------------------------------------
  * SPI driver probe and remove
  * ------------------------------------------------------------------ */
@@ -563,6 +672,26 @@ static int st7789_probe(struct spi_device *spi)
 		return ret;
 	}
 
+	/* ==================================================================
+	 * TODO 13 - Allocate the framebuffer and register the miscdevice
+	 *
+	 * Add this block after the demo succeeds:
+	 *
+	 *   mutex_init(&priv->lock);
+	 *   priv->fbsize = (size_t)priv->width * priv->height * 2;
+	 *   priv->fbuf   = vmalloc_user(priv->fbsize);  // NOT vzalloc()!
+	 *   if (!priv->fbuf) return -ENOMEM;
+	 *   priv->misc.minor = MISC_DYNAMIC_MINOR;
+	 *   priv->misc.name  = "st7789";
+	 *   priv->misc.fops  = &st7789_fops;
+	 *   ret = misc_register(&priv->misc);
+	 *   if (ret) { vfree(priv->fbuf); return ret; }
+	 *   dev_info(&spi->dev, "ST7789 ready at /dev/st7789\n");
+	 *
+	 * vmalloc_user() zeroes the buffer AND sets the VM_USERMAP flag
+	 * that remap_vmalloc_range() requires.
+	 * ================================================================== */
+
 	dev_info(&spi->dev, "ST7789 240x240 initialized successfully\n");
 	return 0;
 }
@@ -578,6 +707,16 @@ static int st7789_probe(struct spi_device *spi)
 static void st7789_remove(struct spi_device *spi)
 {
 	struct st7789_priv *priv = spi_get_drvdata(spi);
+
+	/* ==================================================================
+	 * TODO 13 - Deregister the miscdevice and free the framebuffer
+	 *
+	 * Add these two lines at the very top of remove(), before DISPOFF,
+	 * so no ioctl can race with the SPI teardown:
+	 *
+	 *   misc_deregister(&priv->misc);
+	 *   vfree(priv->fbuf);
+	 * ================================================================== */
 
 	/* Blank the display before shutting down */
 	st7789_write_cmd(priv, ST7789_DISPOFF);
