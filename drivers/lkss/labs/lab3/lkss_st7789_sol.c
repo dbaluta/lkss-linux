@@ -978,15 +978,6 @@ static int st7789_probe(struct spi_device *spi)
 	struct st7789_priv *priv;
 	int ret;
 
-#if 0
-	spi->mode = SPI_MODE_0;
-	ret = spi_setup(spi);
-	if (ret < 0) {
-		dev_err(&spi->dev, "spi_setup() failed: %d\n", ret);
-		return ret;
-	}
-#endif
-
 	dev_info(&spi->dev, "ST7789 probe: speed=%u Hz mode=0x%02x\n",
 		 spi->max_speed_hz, spi->mode);
 
