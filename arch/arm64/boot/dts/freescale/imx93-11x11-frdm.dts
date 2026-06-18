@@ -877,80 +877,7 @@
 	};
 };
 
-/*
- * EXT2 connector (J601) – 2×20 pin header allocation
- * =====================================================
- *
- * LPI2C4 pin allocation:
- *   Pin  3 (GPIO_IO02) = LPI2C4_SDA    Pin  5 (GPIO_IO03) = LPI2C4_SCL
- *
- * LPSPI3 / ST7789 SPI LCD pin allocation:
- *   Pin 23 (GPIO_IO11) = LPSPI3_SCK    Pin 19 (GPIO_IO10) = LPSPI3_MOSI
- *   Pin 24 (GPIO_IO08) = LPSPI3_CS0    Pin 11 (GPIO_IO17) = ST7789 D/C
- *   Pin 32 (GPIO_IO12) = ST7789 RST    Pin  1             = 3V3
- *
- * GPIO LEDs (active-high, 220 Ω series resistor to GND):
- *   Pin 26 (GPIO_IO05) = LED0 yellow
- *   Pin 12 (GPIO_IO06) = LED1 red
- *
- * PWM output (lkss-lab4):
- *   Pin  7 (GPIO_IO04) = TPM3_CH0
- *
- * GPIO Buttons (active-low, external 10 kΩ pull-up to 3V3):
- *   Pin 22 (GPIO_IO13) = BTN0    Pin 29 (GPIO_IO14) = BTN1
- *   Pin 31 (GPIO_IO15) = BTN2    Pin 27 (GPIO_IO16) = BTN3
- *
- * Full pin-header map (odd pins left column, even pins right column):
- *
- *   Pin  1: 3V3 (PWR)             | Pin  2: 5V  (PWR)
- *   Pin  3: GPIO_IO02 – LPI2C4_SDA| Pin  4: 5V  (PWR)
- *   Pin  5: GPIO_IO03 – LPI2C4_SCL| Pin  6: GND
- *   Pin  7: GPIO_IO04 – TPM3_CH0 (PWM, lkss-lab4) | Pin  8: GPIO_IO01  (free)
- *   Pin  9: GND                   | Pin 10: GPIO_IO00  (free)
- *   Pin 11: GPIO_IO17 – ST7789 DC | Pin 12: GPIO_IO06 – LED2
- *   Pin 13: GPIO_IO18  (free)     | Pin 14: GND
- *   Pin 15: GPIO_IO19  (free)     | Pin 16: GPIO_IO21  (free)
- *   Pin 17: GND                   | Pin 18: GPIO_IO22  (free)
- *   Pin 19: GPIO_IO10 – LPSPI3_MOSI| Pin 20: GND
- *   Pin 21: GPIO_IO09 – LPSPI3_MISO(nc)| Pin 22: GPIO_IO13 – BTN0
- *   Pin 23: GPIO_IO11 – LPSPI3_SCK| Pin 24: GPIO_IO08 – LPSPI3_CS0
- *   Pin 25: GND                   | Pin 26: GPIO_IO05 – LED1
- *   Pin 27: GPIO_IO16 – BTN3      | Pin 28: GPIO_IO23  (free)
- *   Pin 29: GPIO_IO14 – BTN1      | Pin 30: GND
- *   Pin 31: GPIO_IO15 – BTN2      | Pin 32: GPIO_IO12 – ST7789 RST
- *   Pin 33: GPIO_IO24  (free)     | Pin 34: GND
- *   Pin 35: GPIO_IO26  (free)     | Pin 36: GPIO_IO27  (free)
- *   Pin 37: GPIO_IO28  (free)     | Pin 38: GPIO_IO29  (free)
- *   Pin 39: GND                   | Pin 40: GPIO_IO30  (free)
- */
-
 &iomuxc {
-#if 0
-        pinctrl_lpspi3_st7789: lpspi3-st7789grp {
-                fsl,pins = <
-                        /* LPSPI3 bus pins */
-                        MX93_PAD_GPIO_IO11__LPSPI3_SCK          0x31e
-                        MX93_PAD_GPIO_IO10__LPSPI3_SOUT         0x31e
-                        MX93_PAD_GPIO_IO08__LPSPI3_PCS0         0x31e
-
-                        /* ST7789 control GPIOs */
-                        MX93_PAD_GPIO_IO17__GPIO2_IO17          0x31e
-                        MX93_PAD_GPIO_IO12__GPIO2_IO12          0x31e
-                >;
-        };
-#endif
-	pinctrl_lpspi4_st7789: lpspi4-st7789grp {
-                fsl,pins = <
-                        /* LPSPI3 bus pins */
-                        MX93_PAD_GPIO_IO21__LPSPI4_SCK          0x31e
-                        MX93_PAD_GPIO_IO20__LPSPI4_SOUT         0x31e
-
-                        /* ST7789 control GPIOs */
-                        MX93_PAD_GPIO_IO13__GPIO2_IO13          0x31e
-                        MX93_PAD_GPIO_IO19__GPIO2_IO19          0x31e
-                >;
-        };
-
         pinctrl_tpm3_lab4: tpm3-lab4grp {
                 fsl,pins = <
                         /* GPIO_IO04 → TPM3_CH0, EXT2 pin 7 */
@@ -965,36 +892,43 @@
         status = "okay";
 };
 
+
+
+/* ------------------------------------------------------------------ */
+/* LPSPI4 bus node                                                     */
+/* ------------------------------------------------------------------ */
 &lpspi4 {
-        #address-cells = <1>;
-        #size-cells = <0>;
-        pinctrl-names = "default";
-        pinctrl-0 = <&pinctrl_lpspi4_st7789>;
-        status = "okay";
+    #address-cells = <1>;
+    #size-cells    = <0>;
+    status         = "okay";
 
-#if 1
-	lkss_st7789: st7789@0 {
-		compatible = "lkss,st7789";
-		reg = <0>;
-		spi-max-frequency = <62500000>;
+    pinctrl-0    = <&pinctrl_lpspi4_st7789>;
+    pinctrl-names = "default";
 
-		dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
-		reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
-       };
-#endif
-#if 0
-        st7789: st7789@0 {
-                compatible = "sitronix,st7789v";
-                reg = <0>;
-                spi-max-frequency = <32000000>;
+    lkss_st7789: st7789@0 {
+        compatible        = "lkss,st7789";
+        reg               = <0>;            /* chip-select index 0   */
+        spi-max-frequency = <62500000>;      /* 62.5 MHz = 1/T_SCYCW_min (16 ns) */
 
-                dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
-                reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
+        /* D/C:   GPIO2_IO13 (J601 pin 22), active-high = data */
+        dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
 
-                width    = <240>;
-                height   = <240>;
-                rotate   = <0>;
-                buswidth = <8>;
-        };
-#endif
+        /* Reset: GPIO2_IO19 (J601 pin 15), active-low */
+        reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
+    };
+};
+
+
+/* ------------------------------------------------------------------ */
+/* iomuxc pin group: LPSPI4 + D/C + RST GPIOs                         */
+/* ------------------------------------------------------------------ */
+&iomuxc {
+    pinctrl_lpspi4_st7789: lpspi4-st7789grp {
+        fsl,pins = <
+            MX93_PAD_GPIO_IO21__LPSPI4_SCK   0x31e   /* J601 pin 16, SCK  */
+            MX93_PAD_GPIO_IO20__LPSPI4_SOUT  0x31e   /* MOSI              */
+            MX93_PAD_GPIO_IO13__GPIO2_IO13   0x31e   /* J601 pin 22, D/C  */
+            MX93_PAD_GPIO_IO19__GPIO2_IO19   0x31e   /* J601 pin 15, RST  */
+        >;
+    };
 };
