@@ -6,12 +6,19 @@
  * The TODO markers are kept here, labelled "(solved)", so you can
  * diff the two files line-by-line and see exactly what each exercise adds.
  *
- * Exercise map (matches day3_final.rst):
- *   Ex-2   write_cmd / write_data / hw_reset
- *   Ex-3   init_display / set_addr_win / fill
- *   Ex-4   fill_rect
- *   Ex-5   draw_pixel / draw_line / draw_circle / demo
- *   bonus  miscdevice (/dev/st7789): flush, fops, probe/remove hooks
+ * Exercise map (matches day3_bis.rst):
+ *   TODO Ex-4.1/4.2   write_cmd / write_data
+ *   TODO Ex-5         hw_reset
+ *   TODO Ex-6         init_display
+ *   TODO Ex-7.1/7.2   set_addr_win / fill
+ *   TODO Ex-8         fill_rect
+ *   TODO Ex-9         draw_pixel
+ *   TODO Ex-10        draw_line
+ *   TODO Ex-11        draw_circle
+ *   TODO Ex-13        demo
+ *   TODO Ex-14        miscdevice struct fields
+ *   TODO Ex-15.1–4    flush / fb_write / fb_ioctl / fb_mmap
+ *   TODO Ex-16        probe/remove miscdevice hooks
  */
 
 #include <linux/module.h>
@@ -67,21 +74,21 @@ struct st7789_priv {
 	struct gpio_desc   *reset;
 	u16                 width;
 	u16                 height;
-	/* TODO bonus (solved): u8 *fbuf, size_t fbsize, struct miscdevice misc, struct mutex lock */
+	/* TODO Ex-14 (solved): u8 *fbuf, size_t fbsize, struct miscdevice misc, struct mutex lock */
 	u8                 *fbuf;
 	size_t              fbsize;
 	struct miscdevice   misc;
 	struct mutex        lock;
 };
 
-/* TODO Ex-2 (solved): set D/C low, spi_write one command byte */
+/* TODO Ex-4.1 (solved): set D/C low, spi_write one command byte */
 static int st7789_write_cmd(struct st7789_priv *priv, u8 cmd)
 {
 	gpiod_set_value(priv->dc, 0);
 	return spi_write(priv->spi, &cmd, 1);
 }
 
-/* TODO Ex-2 (solved): set D/C high, spi_write len bytes */
+/* TODO Ex-4.2 (solved): set D/C high, spi_write len bytes */
 static int st7789_write_data(struct st7789_priv *priv,
 			     const u8 *buf, size_t len)
 {
@@ -94,7 +101,7 @@ static inline int st7789_write_data_byte(struct st7789_priv *priv, u8 byte)
 	return st7789_write_data(priv, &byte, 1);
 }
 
-/* TODO Ex-2 (solved): assert RST (logical 1) >= 15 ms, deassert, wait >= 120 ms */
+/* TODO Ex-5 (solved): assert RST (logical 1) >= 15 ms, deassert, wait >= 120 ms */
 static void st7789_hw_reset(struct st7789_priv *priv)
 {
 	gpiod_set_value(priv->reset, 1);
@@ -104,7 +111,7 @@ static void st7789_hw_reset(struct st7789_priv *priv)
 }
 
 /*
- * TODO Ex-3 (solved): send the init sequence:
+ * TODO Ex-6 (solved): send the init sequence:
  *   SLPOUT + 600 ms, COLMOD(0x05), PORCTRL, GCTRL, VDVVRHEN, VRHS, VDVS,
  *   VCOMS, VCMOFSET, PWCTRL1, DISPON + 150 ms, INVON, MADCTL(0x00),
  *   PVGAMCTRL, NVGAMCTRL  (HSD20 IPS values, same as fb_st7789v HSD20_IPS)
@@ -194,7 +201,7 @@ static int st7789_init_display(struct st7789_priv *priv)
 	return 0;
 }
 
-/* TODO Ex-3 (solved): CASET(x0,x1) + RASET(y0,y1) + RAMWR; coords as big-endian 16-bit pairs */
+/* TODO Ex-7.1 (solved): CASET(x0,x1) + RASET(y0,y1) + RAMWR; coords as big-endian 16-bit pairs */
 static int st7789_set_addr_win(struct st7789_priv *priv,
 			       u16 x0, u16 y0, u16 x1, u16 y1)
 {
@@ -215,7 +222,7 @@ static int st7789_set_addr_win(struct st7789_priv *priv,
 	return st7789_write_cmd(priv, ST7789_RAMWR);
 }
 
-/* TODO Ex-3 (solved): full-panel window, kmalloc one scanline, send height rows */
+/* TODO Ex-7.2 (solved): full-panel window, kmalloc one scanline, send height rows */
 static int st7789_fill(struct st7789_priv *priv, u16 color)
 {
 	u8 *line;
@@ -244,7 +251,7 @@ static int st7789_fill(struct st7789_priv *priv, u16 color)
 	return ret;
 }
 
-/* TODO Ex-4 (solved): clamp coords to panel, set_addr_win, kmalloc row buf, send h rows */
+/* TODO Ex-8 (solved): clamp coords to panel, set_addr_win, kmalloc row buf, send h rows */
 static int st7789_fill_rect(struct st7789_priv *priv,
 			    u16 x, u16 y, u16 w, u16 h, u16 color)
 {
@@ -281,7 +288,7 @@ static int st7789_fill_rect(struct st7789_priv *priv,
 	return ret;
 }
 
-/* TODO Ex-5 (solved): bounds-check, 1x1 address window, send 2 pixel bytes */
+/* TODO Ex-9 (solved): bounds-check, 1x1 address window, send 2 pixel bytes */
 static int st7789_draw_pixel(struct st7789_priv *priv,
 			     u16 x, u16 y, u16 color)
 {
@@ -298,7 +305,7 @@ static int st7789_draw_pixel(struct st7789_priv *priv,
 	return st7789_write_data(priv, pixel, 2);
 }
 
-/* TODO Ex-5 (solved): Bresenham line algorithm, call draw_pixel each step */
+/* TODO Ex-10 (solved): Bresenham line algorithm, call draw_pixel each step */
 static int st7789_draw_line(struct st7789_priv *priv,
 			    int x0, int y0, int x1, int y1, u16 color)
 {
@@ -322,7 +329,7 @@ static int st7789_draw_line(struct st7789_priv *priv,
 	return 0;
 }
 
-/* TODO Ex-5 (solved): midpoint circle algorithm, 8 symmetric pixels per step */
+/* TODO Ex-11 (solved): midpoint circle algorithm, 8 symmetric pixels per step */
 static int st7789_draw_circle(struct st7789_priv *priv,
 			      int cx, int cy, int r, u16 color)
 {
@@ -365,7 +372,7 @@ static int st7789_fill_circle(struct st7789_priv *priv,
 }
 
 /*
- * TODO Ex-5 (solved): draw the test pattern:
+ * TODO Ex-13 (solved): draw the test pattern:
  *   1. cycle red/green/blue/white full-screen fills, 1 s each
  *   2. black background
  *   3. blue filled rectangle at top-left, 80x80
@@ -412,7 +419,7 @@ static int st7789_demo(struct st7789_priv *priv)
 	return 0;
 }
 
-/* TODO bonus (solved): byteswap each LE pixel to BE, flush all rows via set_addr_win + write_data */
+/* TODO Ex-15.1 (solved): byteswap each LE pixel to BE, flush all rows via set_addr_win + write_data */
 static int st7789_flush(struct st7789_priv *priv)
 {
 	u8 *line;
@@ -448,7 +455,7 @@ static int st7789_fb_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-/* TODO bonus (solved): copy_from_user into fbuf at *ppos, update *ppos, return bytes written */
+/* TODO Ex-15.2 (solved): copy_from_user into fbuf at *ppos, update *ppos, return bytes written */
 static ssize_t st7789_fb_write(struct file *file, const char __user *buf,
 			       size_t count, loff_t *ppos)
 {
@@ -466,7 +473,7 @@ static ssize_t st7789_fb_write(struct file *file, const char __user *buf,
 	return n;
 }
 
-/* TODO bonus (solved): accept only ST7789_FLUSH (with mutex_lock), return -ENOTTY otherwise */
+/* TODO Ex-15.3 (solved): accept only ST7789_FLUSH (with mutex_lock), return -ENOTTY otherwise */
 static long st7789_fb_ioctl(struct file *file, unsigned int cmd,
 			    unsigned long arg)
 {
@@ -483,7 +490,7 @@ static long st7789_fb_ioctl(struct file *file, unsigned int cmd,
 	return ret;
 }
 
-/* TODO bonus (solved): reject non-zero vm_pgoff, call remap_vmalloc_range(vma, fbuf, 0) */
+/* TODO Ex-15.4 (solved): reject non-zero vm_pgoff, call remap_vmalloc_range(vma, fbuf, 0) */
 static int st7789_fb_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct st7789_priv *priv = container_of(file->private_data,
@@ -526,10 +533,10 @@ static int st7789_probe(struct spi_device *spi)
 	if (IS_ERR(priv->dc))
 		return PTR_ERR(priv->dc);
 
-	/* TODO Ex-2 (solved): st7789_hw_reset(priv) */
+	/* TODO Ex-5 (solved): st7789_hw_reset(priv) */
 	st7789_hw_reset(priv);
 
-	/* TODO Ex-3 (solved): st7789_init_display(priv); st7789_fill(priv, 0x001F) */
+	/* TODO Ex-6, Ex-7.2 (solved): st7789_init_display(priv); st7789_fill(priv, 0x001F) */
 	ret = st7789_init_display(priv);
 	if (ret) {
 		dev_err(&spi->dev, "display init failed: %d\n", ret);
@@ -539,14 +546,14 @@ static int st7789_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	/* TODO Ex-5 (solved): st7789_demo(priv) */
+	/* TODO Ex-13 (solved): st7789_demo(priv) */
 	ret = st7789_demo(priv);
 	if (ret) {
 		dev_err(&spi->dev, "demo failed: %d\n", ret);
 		return ret;
 	}
 
-	/* TODO bonus (solved): mutex_init; vmalloc_user fbuf; misc_register */
+	/* TODO Ex-16 (solved): mutex_init; vmalloc_user fbuf; misc_register */
 	mutex_init(&priv->lock);
 	priv->fbsize = (size_t)priv->width * priv->height * 2;
 	priv->fbuf   = vmalloc_user(priv->fbsize);
@@ -571,7 +578,7 @@ static void st7789_remove(struct spi_device *spi)
 {
 	struct st7789_priv *priv = spi_get_drvdata(spi);
 
-	/* TODO bonus (solved): misc_deregister(&priv->misc); vfree(priv->fbuf) */
+	/* TODO Ex-16 (solved): misc_deregister(&priv->misc); vfree(priv->fbuf) */
 	misc_deregister(&priv->misc);
 	vfree(priv->fbuf);
 

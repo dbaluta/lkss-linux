@@ -2,15 +2,6 @@
 /*
  * lkss_st7789.c - LKSS Lab 3: ST7789 SPI display driver skeleton
  *
- * Fill in each TODO marker to build a working driver step by step.
- * See lkss_st7789_sol.c for the reference solution.
- *
- * Exercise map (matches day3_final.rst):
- *   Ex-2   write_cmd / write_data / hw_reset
- *   Ex-3   init_display / set_addr_win / fill
- *   Ex-4   fill_rect
- *   Ex-5   draw_pixel / draw_line / draw_circle / demo
- *   bonus  miscdevice (/dev/st7789): flush, fops, probe/remove hooks
  */
 
 #include <linux/module.h>
@@ -66,16 +57,17 @@ struct st7789_priv {
 	struct gpio_desc   *reset;
 	u16                 width;
 	u16                 height;
-	/* TODO bonus: add u8 *fbuf, size_t fbsize, struct miscdevice misc, struct mutex lock */
+	/* TODO Ex-14: add u8 *fbuf, size_t fbsize, struct miscdevice misc, struct mutex lock */
 };
 
-/* TODO Ex-2: set D/C low, spi_write one command byte */
+/* TODO Ex-4.1: set D/C pin low, then spi_write one command byte */
 static int st7789_write_cmd(struct st7789_priv *priv, u8 cmd)
 {
+
 	return -EOPNOTSUPP;
 }
 
-/* TODO Ex-2: set D/C high, spi_write len bytes */
+/* TODO Ex-4.2: set D/C pin high, then spi_write len bytes */
 static int st7789_write_data(struct st7789_priv *priv,
 			     const u8 *buf, size_t len)
 {
@@ -87,13 +79,13 @@ static inline int st7789_write_data_byte(struct st7789_priv *priv, u8 byte)
 	return st7789_write_data(priv, &byte, 1);
 }
 
-/* TODO Ex-2: assert RST (logical 1) >= 15 ms, deassert, wait >= 120 ms */
+/* TODO Ex-5: assert RST (logical 1) >= 15 ms, deassert, wait >= 120 ms */
 static void st7789_hw_reset(struct st7789_priv *priv)
 {
 }
 
 /*
- * TODO Ex-3: send the init sequence:
+ * TODO Ex-6: send the init sequence:
  *   SLPOUT + 600 ms, COLMOD(0x05), PORCTRL, GCTRL, VDVVRHEN, VRHS, VDVS,
  *   VCOMS, VCMOFSET, PWCTRL1, DISPON + 150 ms, INVON, MADCTL(0x00),
  *   PVGAMCTRL, NVGAMCTRL  (HSD20 IPS values, same as fb_st7789v HSD20_IPS)
@@ -103,41 +95,41 @@ static int st7789_init_display(struct st7789_priv *priv)
 	return -EOPNOTSUPP;
 }
 
-/* TODO Ex-3: CASET(x0,x1) + RASET(y0,y1) + RAMWR; coords as big-endian 16-bit pairs */
+/* TODO Ex-7.1: CASET(x0,x1) + RASET(y0,y1) + RAMWR; coords as big-endian 16-bit pairs */
 static int st7789_set_addr_win(struct st7789_priv *priv,
 			       u16 x0, u16 y0, u16 x1, u16 y1)
 {
 	return -EOPNOTSUPP;
 }
 
-/* TODO Ex-3: full-panel window, kmalloc one scanline, send height rows */
+/* TODO Ex-7.2: full-panel window, kmalloc one scanline, send height rows */
 static int st7789_fill(struct st7789_priv *priv, u16 color)
 {
 	return -EOPNOTSUPP;
 }
 
-/* TODO Ex-4: clamp coords to panel, set_addr_win, kmalloc row buf, send h rows */
+/* TODO Ex-8: clamp coords to panel, set_addr_win, kmalloc row buf, send h rows */
 static int st7789_fill_rect(struct st7789_priv *priv,
 			    u16 x, u16 y, u16 w, u16 h, u16 color)
 {
 	return -EOPNOTSUPP;
 }
 
-/* TODO Ex-5: bounds-check, 1x1 address window, send 2 pixel bytes */
+/* TODO Ex-9: bounds-check, 1x1 address window, send 2 pixel bytes */
 static int st7789_draw_pixel(struct st7789_priv *priv,
 			     u16 x, u16 y, u16 color)
 {
 	return -EOPNOTSUPP;
 }
 
-/* TODO Ex-5: Bresenham line algorithm, call draw_pixel each step */
+/* TODO Ex-10: Bresenham line algorithm, call draw_pixel each step */
 static int st7789_draw_line(struct st7789_priv *priv,
 			    int x0, int y0, int x1, int y1, u16 color)
 {
 	return -EOPNOTSUPP;
 }
 
-/* TODO Ex-5: midpoint circle algorithm, 8 symmetric pixels per step */
+/* TODO Ex-11: midpoint circle algorithm, 8 symmetric pixels per step */
 static int st7789_draw_circle(struct st7789_priv *priv,
 			      int cx, int cy, int r, u16 color)
 {
@@ -162,7 +154,7 @@ static int st7789_fill_circle(struct st7789_priv *priv,
 }
 
 /*
- * TODO Ex-5: draw the test pattern:
+ * TODO Ex-13: draw the test pattern:
  *   1. cycle red/green/blue/white full-screen fills, 1 s each
  *   2. black background
  *   3. blue filled rectangle at top-left, 80x80
@@ -175,7 +167,7 @@ static int st7789_demo(struct st7789_priv *priv)
 	return -EOPNOTSUPP;
 }
 
-/* TODO bonus: byteswap each LE pixel to BE, flush all rows via set_addr_win + write_data */
+/* TODO Ex-15.1: byteswap each LE pixel to BE, flush all rows via set_addr_win + write_data */
 static int st7789_flush(struct st7789_priv *priv)
 {
 	return -EOPNOTSUPP;
@@ -187,21 +179,21 @@ static int st7789_fb_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-/* TODO bonus: copy_from_user into fbuf at *ppos, update *ppos, return bytes written */
+/* TODO Ex-15.2: copy_from_user into fbuf at *ppos, update *ppos, return bytes written */
 static ssize_t st7789_fb_write(struct file *file, const char __user *buf,
 			       size_t count, loff_t *ppos)
 {
 	return -EOPNOTSUPP;
 }
 
-/* TODO bonus: accept only ST7789_FLUSH (with mutex_lock), return -ENOTTY otherwise */
+/* TODO Ex-15.3: accept only ST7789_FLUSH (with mutex_lock), return -ENOTTY otherwise */
 static long st7789_fb_ioctl(struct file *file, unsigned int cmd,
 			    unsigned long arg)
 {
 	return -EOPNOTSUPP;
 }
 
-/* TODO bonus: reject non-zero vm_pgoff, call remap_vmalloc_range(vma, fbuf, 0) */
+/* TODO Ex-15.4: reject non-zero vm_pgoff, call remap_vmalloc_range(vma, fbuf, 0) */
 static int st7789_fb_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	return -EOPNOTSUPP;
@@ -239,13 +231,13 @@ static int st7789_probe(struct spi_device *spi)
 	if (IS_ERR(priv->dc))
 		return PTR_ERR(priv->dc);
 
-	/* TODO Ex-2: st7789_hw_reset(priv) */
+	/* TODO Ex-5: st7789_hw_reset(priv) */
 
-	/* TODO Ex-3: st7789_init_display(priv); st7789_fill(priv, 0x001F) */
+	/* TODO Ex-6, Ex-7.2: st7789_init_display(priv); st7789_fill(priv, 0x001F) */
 
-	/* TODO Ex-5: st7789_demo(priv) */
+	/* TODO Ex-13: st7789_demo(priv) */
 
-	/* TODO bonus: mutex_init; vmalloc_user fbuf; misc_register */
+	/* TODO Ex-16: mutex_init; vmalloc_user fbuf; misc_register */
 
 	dev_info(&spi->dev, "ST7789 ready\n");
 	return 0;
@@ -255,7 +247,7 @@ static void st7789_remove(struct spi_device *spi)
 {
 	struct st7789_priv *priv = spi_get_drvdata(spi);
 
-	/* TODO bonus: misc_deregister(&priv->misc); vfree(priv->fbuf) */
+	/* TODO Ex-16: misc_deregister(&priv->misc); vfree(priv->fbuf) */
 
 	st7789_write_cmd(priv, ST7789_DISPOFF);
 	dev_info(&spi->dev, "ST7789 removed\n");
