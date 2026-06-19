@@ -63,15 +63,17 @@ struct st7789_priv {
 /* TODO Ex-4.1: set D/C pin low, then spi_write one command byte */
 static int st7789_write_cmd(struct st7789_priv *priv, u8 cmd)
 {
-
-	return -EOPNOTSUPP;
+	   gpiod_set_value(priv->dc, 0);
+ 	   return spi_write(priv->spi, &cmd, 1);
 }
 
 /* TODO Ex-4.2: set D/C pin high, then spi_write len bytes */
 static int st7789_write_data(struct st7789_priv *priv,
 			     const u8 *buf, size_t len)
 {
-	return -EOPNOTSUPP;
+	
+    	gpiod_set_value(priv->dc, 1);
+    	return spi_write(priv->spi, buf, len);
 }
 
 static inline int st7789_write_data_byte(struct st7789_priv *priv, u8 byte)
@@ -82,6 +84,10 @@ static inline int st7789_write_data_byte(struct st7789_priv *priv, u8 byte)
 /* TODO Ex-5: assert RST (logical 1) >= 15 ms, deassert, wait >= 120 ms */
 static void st7789_hw_reset(struct st7789_priv *priv)
 {
+    gpiod_set_value(priv->reset, 1);   /* assert RESX LOW (active-low) */
+    msleep(20);                         /* hold ≥ 15 ms                 */
+    gpiod_set_value(priv->reset, 0);   /* deassert RESX HIGH           */
+    msleep(150);                        /* wait ≥ 120 ms before cmds    */
 }
 
 /*
@@ -92,6 +98,18 @@ static void st7789_hw_reset(struct st7789_priv *priv)
  */
 static int st7789_init_display(struct st7789_priv *priv)
 {
+
+   st7789_write_cmd(priv, ST7789_SLPOUT);    /* exit sleep; wait 500ms */
+   msleep(500);
+   st7789_write_cmd(priv, ST7789_COLMOD);    /* pixel format           */
+   st7789_write_data_byte(priv, 0x55);       /* 0x55 = RGB565          */
+   st7789_write_cmd(priv, ST7789_MADCTL);    /* memory access control  */
+   st7789_write_data_byte(priv, 0x00);       /* normal orientation     */
+   st7789_write_cmd(priv, ST7789_INVON);     /* inversion on           */
+   st7789_write_cmd(priv, ST7789_NORON);     /* normal display mode    */
+   st7789_write_cmd(priv, ST7789_DISPON);    /* display on; wait 100ms */
+   msleep(100);
+	return 0;
 	return -EOPNOTSUPP;
 }
 
@@ -99,20 +117,87 @@ static int st7789_init_display(struct st7789_priv *priv)
 static int st7789_set_addr_win(struct st7789_priv *priv,
 			       u16 x0, u16 y0, u16 x1, u16 y1)
 {
-	return -EOPNOTSUPP;
+
+    u8 col[4] = { x0 >> 8, x0 & 0xff, x1 >> 8, x1 & 0xff };
+    u8 row[4] = { y0 >> 8, y0 & 0xff, y1 >> 8, y1 & 0xff };
+    int ret;
+
+    ret = st7789_write_cmd(priv, ST7789_CASET);
+    if (ret) return ret;
+    ret = st7789_write_data(priv, col, 4);
+    if (ret) return ret;
+
+    ret = st7789_write_cmd(priv, ST7789_RASET);
+    if (ret) return ret;
+    ret = st7789_write_data(priv, row, 4);
+    if (ret) return ret;
+
+    return st7789_write_cmd(priv, ST7789_RAMWR);
 }
 
 /* TODO Ex-7.2: full-panel window, kmalloc one scanline, send height rows */
 static int st7789_fill(struct st7789_priv *priv, u16 color)
 {
-	return -EOPNOTSUPP;
+    u8 color_hi = color >> 8;
+    u8 color_lo = color & 0xff;
+    u8 *line;
+    int ret = 0, x, y;
+
+    ret = st7789_set_addr_win(priv, 0, 0, priv->width - 1, priv->height - 1);
+    if (ret) return ret;
+
+    line = kmalloc(priv->width * 2, GFP_KERNEL);
+    if (!line) return -ENOMEM;
+
+    /* Build one scanline of the repeated color in big-endian */
+    for (x = 0; x < priv->width; x++) {
+        line[x * 2]     = color_hi;
+        line[x * 2 + 1] = color_lo;
+    }
+
+    /* Send the scanline once per row */
+    for (y = 0; y < priv->height; y++) {
+        ret = st7789_write_data(priv, line, priv->width * 2);
+        if (ret) break;
+    }
+
+    kfree(line);
+    return ret;
 }
 
 /* TODO Ex-8: clamp coords to panel, set_addr_win, kmalloc row buf, send h rows */
 static int st7789_fill_rect(struct st7789_priv *priv,
 			    u16 x, u16 y, u16 w, u16 h, u16 color)
 {
-	return -EOPNOTSUPP;
+
+	    u8 color_hi = color >> 8;
+    u8 color_lo = color & 0xff;
+    u8 *line;
+    int ret = 0;
+    u16 i, row;
+
+    /* Clamp to panel boundaries */
+    if (x >= priv->width || y >= priv->height) return 0;
+    if (x + w > priv->width)  w = priv->width  - x;
+    if (y + h > priv->height) h = priv->height - y;
+
+    ret = st7789_set_addr_win(priv, x, y, x + w - 1, y + h - 1);
+    if (ret) return ret;
+
+    line = kmalloc(w * 2, GFP_KERNEL);
+    if (!line) return -ENOMEM;
+
+    for (i = 0; i < w; i++) {
+        line[i * 2]     = color_hi;
+        line[i * 2 + 1] = color_lo;
+    }
+    for (row = 0; row < h; row++) {
+        ret = st7789_write_data(priv, line, w * 2);
+        if (ret) break;
+    }
+
+    kfree(line);
+    return ret;
 }
 
 /* TODO Ex-9: bounds-check, 1x1 address window, send 2 pixel bytes */
@@ -164,7 +249,20 @@ static int st7789_fill_circle(struct st7789_priv *priv,
  */
 static int st7789_demo(struct st7789_priv *priv)
 {
-	return -EOPNOTSUPP;
+
+	st7789_fill(priv, 0xF800);   /* solid red   */
+	msleep(1000);
+	st7789_fill(priv, 0x07E0);   /* solid green */
+	msleep(1000);
+	st7789_fill(priv, 0x001F);   /* solid blue  */
+	msleep(1000);
+
+
+st7789_fill_rect(priv,   0,   0, 240,   12, 0xF800);  /* top    */
+st7789_fill_rect(priv,   0, 228, 240,   12, 0xF800);  /* bottom */
+st7789_fill_rect(priv,   0,   0,   12, 240, 0xF800);  /* left   */
+st7789_fill_rect(priv, 228,   0,   12, 240, 0xF800);  /* right  */
+	return 0;
 }
 
 /* TODO Ex-15.1: byteswap each LE pixel to BE, flush all rows via set_addr_win + write_data */
@@ -233,9 +331,14 @@ static int st7789_probe(struct spi_device *spi)
 
 	/* TODO Ex-5: st7789_hw_reset(priv) */
 
+
+	st7789_hw_reset(priv); //XXX: remove
+	st7789_init_display(priv); /// XXX: remove
+
+
 	/* TODO Ex-6, Ex-7.2: st7789_init_display(priv); st7789_fill(priv, 0x001F) */
 
-	/* TODO Ex-13: st7789_demo(priv) */
+	st7789_demo(priv);
 
 	/* TODO Ex-16: mutex_init; vmalloc_user fbuf; misc_register */
 
