@@ -1,0 +1,139 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * imx93-11x11-frdm-lab3-st7789.dts
+ *
+ * LKSS Lab 3 – ST7789 240×240 TFT display via LPSPI5
+ * Based on the NXP i.MX93 11×11 FRDM board.
+ *
+ * Wiring (expansion header):
+ *   GPIO_IO21  LPSPI5_SCK    serial clock
+ *   GPIO_IO20  LPSPI5_SOUT   MOSI (serial data out)
+ *   GPIO_IO18  LPSPI5_PCS0   hardware chip-select (toggled by SPI core;
+ *                             display CS pin is tied to GND on the module)
+ *   GPIO_IO19  GPIO2_IO19    RST – active-low hardware reset
+ *   GPIO_IO13  GPIO2_IO13    D/C – data/command select (HIGH = data)
+ *   3.3 V                    VCC and BLK (backlight always on)
+ *   GND                      GND
+ *
+ * Build:
+ *   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+ *        freescale/imx93-11x11-frdm-lab3-st7789.dtb
+ *
+ * The resulting .dtb replaces imx93-11x11-frdm.dtb on the boot media.
+ */
+
+/* Include the full base board DTS.  All existing peripherals are preserved.
+ * We only add the LPSPI5 bus node and its pinctrl group.               */
+#include "imx93-11x11-frdm-init.dts"
+
+/* -------------------------------------------------------------------------
+ * LPSPI5 bus node
+ *
+ * The base DTSI already defines lpspi5 at address 0x426f0000 with
+ * status = "disabled".  We override it here to enable the controller
+ * and attach the ST7789 display as child device@0 (chip-select 0).
+ * ------------------------------------------------------------------------- */
+&lpspi5 {
+	#address-cells = <1>;
+	#size-cells    = <0>;
+	status         = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0     = <&pinctrl_lpspi5_lab3>;
+
+	/*
+	 * ST7789 child device node.
+	 *
+	 * reg = <0>  selects chip-select index 0 (LPSPI5_PCS0 / GPIO_IO18).
+	 * The display module's CS pin is tied to GND, so LPSPI5_PCS0
+	 * toggles during every SPI transaction but has no electrical effect
+	 * on the display.
+	 */
+	/*
+	 * ST7789 via fbtft staging driver (drivers/staging/fbtft/fb_st7789v.c).
+	 *
+	 * For exercises 1-5 (custom lkss_st7789 driver) change compatible to:
+	 *   compatible = "lkss,lkss-st7789";
+	 * and remove the fbtft-specific properties (buswidth, height).
+	 */
+	lkss_st7789: display@0 {
+		compatible        = "sitronix,st7789v";
+		reg               = <0>;
+
+		/* 40 MHz write clock – well within the ST7789 80 MHz maximum */
+		spi-max-frequency = <40000000>;
+
+		/*
+		 * SPI Mode 0 (CPOL=0, CPHA=0): no spi-cpol / spi-cpha
+		 * properties needed – Mode 0 is the hardware default.
+		 */
+
+		/*
+		 * fbtft: 8-bit parallel bus width over SPI.
+		 * Required – fbtft probe returns -EINVAL if buswidth is 0.
+		 */
+		buswidth = <8>;
+
+		/*
+		 * Our panel is 240×240.  fb_st7789v.c defaults height to 320;
+		 * override it here so the framebuffer and address window match.
+		 */
+		height = <240>;
+
+		/*
+		 * No "init" property: fbtft's own init_display() handles the
+		 * full ST7789 initialisation sequence (SWRESET, SLPOUT, COLMOD,
+		 * MADCTL, INVON, NORON, DISPON).
+		 */
+
+		/*
+		 * RST: GPIO_IO19 = GPIO2_IO19, active-low.
+		 * The kernel asserts logical 1 → physical pin LOW → resets ST7789.
+		 */
+		reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
+
+		/*
+		 * D/C: GPIO_IO13 = GPIO2_IO13, active-high.
+		 * HIGH = data byte, LOW = command byte.
+		 */
+		dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* -------------------------------------------------------------------------
+ * iomuxc – pin multiplexer configuration for LPSPI5 + RST + D/C GPIOs
+ *
+ * Pad config value 0x31e:
+ *   [12:11] = 11 – drive strength: full (DSE = 3)
+ *   [8]     =  1 – input buffer enabled (IBE)
+ *   [7:6]   =  0 – no pull (PUE=0)
+ *   [5:4]   =  0 – PDRV = fast slew
+ *
+ * GPIO_IO19 is LPSPI5_SIN in alternate function 4, but we configure it
+ * in GPIO mode (alternate function 0) because it is used as a plain GPIO
+ * output for the hardware reset signal.
+ * ------------------------------------------------------------------------- */
+&iomuxc {
+	pinctrl_lpspi5_lab3: lpspi5-lab3-grp {
+		fsl,pins = <
+			/* LPSPI5_SCK – serial clock output */
+			MX93_PAD_GPIO_IO21__LPSPI5_SCK     0x31e
+			/* LPSPI5_SOUT – serial data output (MOSI) */
+			MX93_PAD_GPIO_IO20__LPSPI5_SOUT    0x31e
+			/* LPSPI5_PCS0 – hardware chip-select 0 */
+			MX93_PAD_GPIO_IO18__LPSPI5_PCS0    0x31e
+
+			/*
+			 * GPIO_IO19 → GPIO2_IO19 (plain GPIO, not LPSPI5_SIN)
+			 * Configured as output for the ST7789 RST line.
+			 */
+			MX93_PAD_GPIO_IO19__GPIO2_IO19     0x31e
+
+			/*
+			 * GPIO_IO13 → GPIO2_IO13 (plain GPIO output)
+			 * Configured as output for the ST7789 D/C line.
+			 */
+			MX93_PAD_GPIO_IO13__GPIO2_IO13     0x31e
+		>;
+	};
+};

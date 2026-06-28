@@ -1,0 +1,32 @@
+menuconfig LKSS_LAB4
+	tristate "LKSS Lab 4 drivers"
+	help
+	  Enables the drivers used in Lab 4 of the Linux Kernel Summer School.
+	  Select M to build them as loadable modules (recommended during
+	  development) or Y to compile them directly into the kernel Image.
+
+if LKSS_LAB4
+
+config LKSS_LAB4_GPIO
+	tristate "GPIO platform driver: LED blinking + button interrupts"
+	depends on GPIOLIB && OF
+	help
+	  Platform driver that binds to the "lkss,lab4" Device Tree node.
+
+	  It registers three LED GPIOs (red, green, blue) with sysfs-controlled
+	  blinking via kernel timers, and four button GPIOs with edge-triggered
+	  threaded interrupt handlers that print a message on press and release.
+
+	  Sysfs files (under /sys/bus/platform/devices/lkss-lab4/):
+	    led0, led1, led2 — write 1 to blink, 0 to stop
+
+	  Hardware (FRDM-IMX93 EXT2 header):
+	    LED0 red   GPIO2_IO07 pin 26
+	    LED1 green GPIO2_IO04 pin  7
+	    LED2 blue  GPIO2_IO18 pin 12
+	    BTN1       GPIO2_IO05 pin 29
+	    BTN2       GPIO2_IO06 pin 31
+	    BTN3       GPIO2_IO00 pin 27
+	    BTN4       GPIO2_IO01 pin 28
+
+endif # LKSS_LAB4

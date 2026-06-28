@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * lkss_st7789.dts - DT snippet for LKSS Lab 3 (ST7789 SPI display)
+ *
+ * Not a standalone device tree -- copy the two blocks below into
+ * arch/arm64/boot/dts/freescale/imx93-11x11-frdm.dts:
+ *
+ *   1. The pinctrl_lpspi3_st7789 group goes inside the existing &iomuxc
+ *      block (there is already a disabled copy of it wrapped in #if 0 /
+ *      #endif a bit further down in that file -- remove that one, or
+ *      just leave it disabled and paste this enabled copy elsewhere in
+ *      the same &iomuxc block).
+ *   2. The &lpspi3 block is a top-level node, paste it next to the other
+ *      &lpspiN / &lpi2cN nodes.
+ *
+ * Wiring (i.MX93 FRDM EXT2 header, J601) -- matches lkss_st7789.c:
+ *   SDA (MOSI)  pin 19  GPIO_IO10  LPSPI3_SOUT
+ *   SCL (SCK)   pin 23  GPIO_IO11  LPSPI3_SCK
+ *   CS          pin 24  GPIO_IO08  LPSPI3_PCS0
+ *   DC          pin 11  GPIO_IO17  GPIO2_IO17
+ *   RST         pin 32  GPIO_IO12  GPIO2_IO12
+ *   VCC / BLK   pin  1  3V3
+ *   GND         pin  6  GND
+ */
+
+&iomuxc {
+	pinctrl_lpspi3_st7789: lpspi3-st7789grp {
+		fsl,pins = <
+			MX93_PAD_GPIO_IO11__LPSPI3_SCK		0x31e
+			MX93_PAD_GPIO_IO10__LPSPI3_SOUT	0x31e
+			MX93_PAD_GPIO_IO08__LPSPI3_PCS0	0x31e
+
+			MX93_PAD_GPIO_IO17__GPIO2_IO17		0x31e
+			MX93_PAD_GPIO_IO12__GPIO2_IO12		0x31e
+		>;
+	};
+};
+
+&lpspi3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_lpspi3_st7789>;
+	status = "okay";
+
+	lkss_st7789: st7789@0 {
+		compatible = "lkss,st7789";
+		reg = <0>;
+		spi-max-frequency = <32000000>;
+
+		dc-gpios    = <&gpio2 17 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>;
+	};
+};

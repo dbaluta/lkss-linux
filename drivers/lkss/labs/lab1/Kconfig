@@ -1,0 +1,29 @@
+menuconfig LKSS_LAB1
+	tristate "LKSS Lab 1 drivers"
+	help
+	  Enables the skeleton drivers used in Lab 1 of the Linux Kernel
+	  Summer School. Select M to build them as loadable modules (recommended
+	  during development) or Y to compile them directly into the kernel Image.
+
+if LKSS_LAB1
+
+config LKSS_LAB1_HELLO
+	tristate "Exercise 1: Hello World module"
+	help
+	  A minimal kernel module that prints a message on load and unload.
+	  Used in Exercise 1 to study module anatomy, insmod/rmmod, and dmesg.
+
+config LKSS_LAB1_OOPS
+	tristate "Exercise 4: Kernel Oops demonstration"
+	help
+	  A module that deliberately dereferences a NULL pointer to trigger
+	  a kernel oops. Used in Exercise 4 to study kernel fault handling
+	  and oops/panic output.
+
+config LKSS_LAB1_TIMER
+	tristate "Exercise 5: Kernel Timer demonstration"
+	help
+	  A module that arms a one-shot kernel timer. Students extend it to
+	  fire periodically and observe a crash inside a timer callback.
+
+endif # LKSS_LAB1

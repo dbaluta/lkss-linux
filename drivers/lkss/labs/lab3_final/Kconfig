@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config LKSS_LAB3_ST7789_SKELETON
+	tristate "Lab 3: ST7789 SPI driver skeleton (student TODO version)"
+	depends on SPI && GPIOLIB
+	help
+	  Skeleton SPI driver for LKSS Lab 3. All key functions have
+	  TODO markers that students must fill in, exercise by exercise.
+
+	  Do NOT load this module at the same time as LKSS_LAB3_ST7789
+	  (both use the same DT compatible string).
+
+	  To compile as a module, choose M. The module will be called
+	  lkss_st7789_skeleton.
+
+config LKSS_LAB3_ST7789
+	tristate "Lab 3: ST7789 SPI driver full solution"
+	depends on SPI && GPIOLIB
+	help
+	  Complete SPI display driver for LKSS Lab 3. Implements all
+	  primitives: hw_reset, init, fill, fill_rect, draw_pixel,
+	  draw_line, draw_circle, fill_circle, and a demo pattern.
+
+	  Do NOT load this module at the same time as
+	  LKSS_LAB3_ST7789_SKELETON.
+
+	  To compile as a module, choose M. The module will be called
+	  lkss_st7789.

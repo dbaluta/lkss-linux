@@ -53,24 +53,6 @@
 		};
 	};
 
-	/* LKSS lab 4: 3 LEDs + 4 buttons on EXT2, driven by platform_gpio.c */
-	lkss_lab4: lkss-lab4 {
-		compatible = "lkss,lab4";
-
-		led-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>,
-			    <&gpio2  14 GPIO_ACTIVE_HIGH>,
-			    <&gpio2 15 GPIO_ACTIVE_HIGH>;
-
-		button-gpios = <&gpio2 17 GPIO_ACTIVE_LOW>,
-				<&gpio2 18 GPIO_ACTIVE_LOW>,
-				<&gpio2 27 GPIO_ACTIVE_LOW>,
-				<&gpio2 22 GPIO_ACTIVE_LOW>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&pinctrl_lkss_gpio>;
-		status = "okay";
-	};
-
 	reg_usdhc2_vmmc: regulator-usdhc2 {
 		compatible = "regulator-fixed";
 		off-on-delay-us = <12000>;
@@ -394,35 +376,10 @@
 	};
 };
 
-/* LKSS lab: BME280 environmental sensor on EXT2 */
-&lpi2c4 {
-	clock-frequency = <400000>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_lpi2c4>;
-	status = "okay";
-
-	bme280: bme280@76 {
-		compatible = "bosch,bme280";
-		reg = <0x76>;
-	};
-};
-
 &lpuart1 { /* console */
 	pinctrl-0 = <&pinctrl_uart1>;
 	pinctrl-names = "default";
 	status = "okay";
-};
-
-&lpi2c7 {
-	clock-frequency = <400000>;
-	pinctrl-0 = <&pinctrl_lpi2c7>;
-	pinctrl-names = "default";
-	status = "okay";
-
-	pressure@76 {
-		compatible = "bosch,bmp280";
-		reg = <0x76>;
-	};
 };
 
 &lpuart5 {
@@ -646,34 +603,6 @@
 		>;
 	};
 
-	pinctrl_lpi2c7: lpi2c7grp {
-		fsl,pins = <
-			MX93_PAD_GPIO_IO08__LPI2C7_SDA			0x40000b9e
-			MX93_PAD_GPIO_IO09__LPI2C7_SCL			0x40000b9e
-		>;
-	};
-
-	pinctrl_lpi2c4: lpi2c4grp {
-		fsl,pins = <
-			MX93_PAD_GPIO_IO02__LPI2C4_SDA			0x40000b9e
-			MX93_PAD_GPIO_IO03__LPI2C4_SCL			0x40000b9e
-		>;
-	};
-
-	/* LKSS lab 4: 3 LEDs + 4 buttons, external pull-ups required on buttons */
-	pinctrl_lkss_gpio: lkss-gpiogrp {
-		fsl,pins = <
-			MX93_PAD_GPIO_IO14__GPIO2_IO14		0x31e
-			MX93_PAD_GPIO_IO04__GPIO2_IO04		0x31e
-			MX93_PAD_GPIO_IO15__GPIO2_IO15		0x31e
-
-			MX93_PAD_GPIO_IO17__GPIO2_IO17		0x31e
-			MX93_PAD_GPIO_IO18__GPIO2_IO18		0x31e
-			MX93_PAD_GPIO_IO27__GPIO2_IO27		0x31e
-			MX93_PAD_GPIO_IO22__GPIO2_IO22		0x31e
-		>;
-	};
-
 	pinctrl_mqs1: mqs1grp {
 		fsl,pins = <
 			MX93_PAD_PDM_CLK__MQS1_LEFT		0x31e
@@ -875,60 +804,4 @@
 			MX93_PAD_WDOG_ANY__WDOG1_WDOG_ANY	0x31e
 		>;
 	};
-};
-
-&iomuxc {
-        pinctrl_tpm3_lab4: tpm3-lab4grp {
-                fsl,pins = <
-                        /* GPIO_IO04 → TPM3_CH0, EXT2 pin 7 */
-                        MX93_PAD_GPIO_IO04__TPM3_CH0            0x57e
-                >;
-        };
-};
-
-&tpm3 {
-        pinctrl-names = "default";
-        pinctrl-0 = <&pinctrl_tpm3_lab4>;
-        status = "okay";
-};
-
-
-
-/* ------------------------------------------------------------------ */
-/* LPSPI4 bus node                                                     */
-/* ------------------------------------------------------------------ */
-&lpspi4 {
-    #address-cells = <1>;
-    #size-cells    = <0>;
-    status         = "okay";
-
-    pinctrl-0    = <&pinctrl_lpspi4_st7789>;
-    pinctrl-names = "default";
-
-    lkss_st7789: st7789@0 {
-        compatible        = "lkss,st7789";
-        reg               = <0>;            /* chip-select index 0   */
-        spi-max-frequency = <62500000>;      /* 62.5 MHz = 1/T_SCYCW_min (16 ns) */
-
-        /* D/C:   GPIO2_IO13 (J601 pin 22), active-high = data */
-        dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
-
-        /* Reset: GPIO2_IO19 (J601 pin 15), active-low */
-        reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
-    };
-};
-
-
-/* ------------------------------------------------------------------ */
-/* iomuxc pin group: LPSPI4 + D/C + RST GPIOs                         */
-/* ------------------------------------------------------------------ */
-&iomuxc {
-    pinctrl_lpspi4_st7789: lpspi4-st7789grp {
-        fsl,pins = <
-            MX93_PAD_GPIO_IO21__LPSPI4_SCK   0x31e   /* J601 pin 16, SCK  */
-            MX93_PAD_GPIO_IO20__LPSPI4_SOUT  0x31e   /* MOSI              */
-            MX93_PAD_GPIO_IO13__GPIO2_IO13   0x31e   /* J601 pin 22, D/C  */
-            MX93_PAD_GPIO_IO19__GPIO2_IO19   0x31e   /* J601 pin 15, RST  */
-        >;
-    };
 };
