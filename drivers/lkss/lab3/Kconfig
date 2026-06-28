@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+if LKSS_DRIVERS_LAB3
+
+config LKSS_DRIVERS_LAB3_SKEL
+	tristate "Lab3 ST7789 simple driver"
+	help
+	  Compile Lab3 st7789 simple driver
+
+endif # LKSS_DRIVERS_LAB3
