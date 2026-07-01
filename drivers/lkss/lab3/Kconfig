@@ -7,4 +7,11 @@ config LKSS_DRIVERS_LAB3_ST7789
 	help
 	  Compile Lab3 st7789 simple driver
 
+config LKSS_DRIVERS_LAB3_GPIO
+	tristate "Lab3 Platform GPIO driver for buttons and LEDs (exercise 12)"
+	help
+	  Compile the Lab3 platform GPIO driver. Handles 4 push-buttons
+	  and 3 LEDs from the LKSS daughter board and exposes them via
+	  sysfs attributes on the platform device.
+
 endif # LKSS_DRIVERS_LAB3
