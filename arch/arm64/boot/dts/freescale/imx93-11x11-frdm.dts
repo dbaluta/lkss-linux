@@ -343,6 +343,37 @@
 	};
 };
 
+&lpspi4 {
+    #address-cells = <1>;
+    #size-cells    = <0>;
+    status         = "okay";
+
+    pinctrl-0    = <&pinctrl_lpspi4_st7789>;
+    pinctrl-names = "default";
+
+    lkss_st7789: st7789@0 {
+        compatible        = "lkss,st7789";
+        reg               = <0>;            /* chip-select index 0   */
+        spi-max-frequency = <62500000>;
+
+        /* D/C:   GPIO2_IO13 (J601 pin 22), active-high = data */
+        dc-gpios    = <&gpio2 13 GPIO_ACTIVE_HIGH>;
+
+        /* Reset: GPIO2_IO19 (J601 pin 15), active-low */
+        reset-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
+    };
+};
+
+&iomuxc {
+    pinctrl_lpspi4_st7789: lpspi4-st7789grp {
+        fsl,pins = <
+            MX93_PAD_GPIO_IO21__LPSPI4_SCK   0x31e   /* J601 pin 16, SCK  */
+            MX93_PAD_GPIO_IO20__LPSPI4_SOUT  0x31e   /* MOSI              */
+            MX93_PAD_GPIO_IO13__GPIO2_IO13   0x31e   /* J601 pin 22, D/C  */
+            MX93_PAD_GPIO_IO19__GPIO2_IO19   0x31e   /* J601 pin 15, RST  */
+        >;
+    };
+};
 &lpi2c3 {
 	clock-frequency = <400000>;
 	pinctrl-0 = <&pinctrl_lpi2c3>;
