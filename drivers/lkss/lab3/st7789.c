@@ -2,6 +2,8 @@
 /*
  * st7789.c LKSS Lab 3: ST7789 240x240 SPI display driver
  *
+ * Exercises 4-9:  SPI primitives, reset, init, fill, rect, pixel
+ * Exercise 10:    miscdevice framebuffer interface (mmap + ioctl flush)
  */
 
 #include <linux/module.h>
@@ -10,6 +12,10 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/of.h>
+#include <linux/miscdevice.h>
+#include <linux/mm.h>
+#include <linux/vmalloc.h>
+#include <linux/ioctl.h>
 
 /* ST7789 command opcodes */
 #define ST7789_SLPOUT    0x11
@@ -38,7 +44,11 @@
 
 #define ST7789_WIDTH   240
 #define ST7789_HEIGHT  240
+#define ST7789_FB_SIZE (ST7789_WIDTH * ST7789_HEIGHT * 2)
 
+/* 10: ioctl interface - must match the userspace definition */
+#define ST7789FB_MAGIC  'F'
+#define ST7789FB_FLUSH  _IO(ST7789FB_MAGIC, 0)
 
 struct st7789_priv {
 	struct spi_device *spi;
@@ -46,6 +56,10 @@ struct st7789_priv {
 	struct gpio_desc  *reset;
 	u16                width;
 	u16                height;
+
+	/* 10: framebuffer miscdevice */
+	void              *fb;   /* vmalloc'd RGB565 framebuffer, 240x240x2 bytes */
+	struct miscdevice  mdev;
 };
 
 /* 4: Low-level SPI primitives */
@@ -150,6 +164,82 @@ static void st7789_demo(struct st7789_priv *priv)
 			st7789_draw_pixel(priv, x * 10, y * 10, 0xFFFF);
 }
 
+/* 10: miscdevice framebuffer interface ---- */
+
+/*
+ * Flush the vmalloc framebuffer to the ST7789 display.
+ * Each row is copied into a kmalloc'd line buffer before the SPI transfer
+ * because some SPI DMA engines require physically contiguous source memory.
+ */
+static int st7789fb_flush(struct st7789_priv *priv)
+{
+	u8 *line;
+	int y, ret;
+
+	ret = st7789_set_addr_win(priv, 0, 0, priv->width - 1, priv->height - 1);
+	if (ret)
+		return ret;
+
+	line = kmalloc(priv->width * 2, GFP_KERNEL);
+	if (!line)
+		return -ENOMEM;
+
+	for (y = 0; y < priv->height; y++) {
+		memcpy(line, (u8 *)priv->fb + y * priv->width * 2, priv->width * 2);
+		ret = st7789_write_data(priv, line, priv->width * 2);
+		if (ret)
+			break;
+	}
+
+	kfree(line);
+	return ret;
+}
+
+/*
+ * misc open: the misc layer stores the struct miscdevice pointer in
+ * filp->private_data; use container_of to recover the full st7789_priv
+ * and replace private_data so mmap/ioctl can access it directly.
+ */
+static int st7789fb_open(struct inode *inode, struct file *filp)
+{
+	struct miscdevice *mdev = filp->private_data;
+	struct st7789_priv *priv = container_of(mdev, struct st7789_priv, mdev);
+
+	filp->private_data = priv;
+	return 0;
+}
+
+static int st7789fb_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	struct st7789_priv *priv = filp->private_data;
+	unsigned long size = vma->vm_end - vma->vm_start;
+
+	if (size > PAGE_ALIGN(ST7789_FB_SIZE))
+		return -EINVAL;
+
+	return remap_vmalloc_range(vma, priv->fb, vma->vm_pgoff);
+}
+
+static long st7789fb_ioctl(struct file *filp, unsigned int cmd,
+			   unsigned long arg)
+{
+	struct st7789_priv *priv = filp->private_data;
+
+	switch (cmd) {
+	case ST7789FB_FLUSH:
+		return st7789fb_flush(priv);
+	default:
+		return -ENOTTY;
+	}
+}
+
+static const struct file_operations st7789fb_fops = {
+	.owner          = THIS_MODULE,
+	.open           = st7789fb_open,
+	.mmap           = st7789fb_mmap,
+	.unlocked_ioctl = st7789fb_ioctl,
+};
+
 /* SPI driver */
 static int st7789_probe(struct spi_device *spi)
 {
@@ -188,17 +278,33 @@ static int st7789_probe(struct spi_device *spi)
 		return PTR_ERR(priv->dc);
 	}
 
+	priv->fb = vmalloc(ST7789_FB_SIZE);
+	if (!priv->fb)
+		return -ENOMEM;
+	memset(priv->fb, 0, ST7789_FB_SIZE);
+
 	st7789_hw_reset(priv);
 
 	ret = st7789_init_display(priv);
 	if (ret) {
 		dev_err(&spi->dev, "init failed: %d\n", ret);
+		vfree(priv->fb);
 		return ret;
 	}
 
 	st7789_demo(priv);
 
-	dev_info(&spi->dev, "ST7789 ready\n");
+	priv->mdev.minor = MISC_DYNAMIC_MINOR;
+	priv->mdev.name  = "st7789fb";
+	priv->mdev.fops  = &st7789fb_fops;
+	ret = misc_register(&priv->mdev);
+	if (ret) {
+		dev_err(&spi->dev, "misc_register failed: %d\n", ret);
+		vfree(priv->fb);
+		return ret;
+	}
+
+	dev_info(&spi->dev, "ST7789 ready, framebuffer at /dev/st7789fb\n");
 	return 0;
 }
 
@@ -206,7 +312,9 @@ static void st7789_remove(struct spi_device *spi)
 {
 	struct st7789_priv *priv = spi_get_drvdata(spi);
 
+	misc_deregister(&priv->mdev);
 	st7789_write_cmd(priv, ST7789_DISPOFF);
+	vfree(priv->fb);
 	dev_info(&spi->dev, "ST7789 removed\n");
 }
 
