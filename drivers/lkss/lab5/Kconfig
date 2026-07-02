@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+if LKSS_DRIVERS_LAB5
+
+config LKSS_DRIVERS_LAB5_HACKPAD
+	tristate "Lab5 hackathon buttons/LEDs driver (/dev/hackpad)"
+	help
+	  Character device driver exposing the LKSS daughter board's four
+	  push buttons (as blocking/pollable events) and three user LEDs
+	  (via ioctl/write) through /dev/hackpad.
+
+config LKSS_DRIVERS_LAB5_ST7789FB
+	tristate "Lab5 ST7789 display driver with fbdev support"
+	depends on SPI && GPIOLIB
+	select FB_CORE
+	select FB_DEVICE
+	select FB_SYSMEM_HELPERS_DEFERRED
+	help
+	  The Lab 3 ST7789 SPI display driver extended with a standard
+	  Linux framebuffer (fbdev) interface backed by deferred I/O.
+	  Provides /dev/fb0 for LVGL and other userspace graphics.
+
+endif # LKSS_DRIVERS_LAB5

@@ -38,6 +38,18 @@
 				<&gpio2 15 GPIO_ACTIVE_HIGH>; // Blue led:GPIO_IO[15]
 			status = "disabled";
 		};
+
+		hackpad {
+			compatible = "lkss,hackpad";
+			button-gpios = <&gpio2 17 GPIO_ACTIVE_LOW>, // SW1: GPIO2.IO[17]
+				<&gpio2 18 GPIO_ACTIVE_LOW>, // SW2: GPIO2.IO[18]
+				<&gpio2 27 GPIO_ACTIVE_LOW>, // SW3: GPIO2.IO[27]
+				<&gpio2 22 GPIO_ACTIVE_LOW>; // SW4: GPIO2.IO[22]
+			led-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>, // Red led: GPIO_IO[4]
+				<&gpio2 14 GPIO_ACTIVE_HIGH>, // Green led: GPIO_IO[14]
+				<&gpio2 15 GPIO_ACTIVE_HIGH>; // Blue led: GPIO_IO[15]
+			status = "disabled";
+		};
 	};
 
         flexcan2_phy: can-phy {

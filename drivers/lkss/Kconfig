@@ -40,4 +40,12 @@ config LKSS_DRIVERS_LAB4
 
 source "drivers/lkss/lab4/Kconfig"
 
+config LKSS_DRIVERS_LAB5
+	bool "Linux Kernel Summer School lab 5 (hackathon) drivers"
+	default n
+	help
+	  Enable support for lab 5 hackathon drivers.
+
+source "drivers/lkss/lab5/Kconfig"
+
 endif # LKSS_DRIVERS
